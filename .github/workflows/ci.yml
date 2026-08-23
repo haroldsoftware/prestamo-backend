@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+
+      - run: npm ci
+      - run: npm run typecheck
+
+      # Esta copia del motor es responsabilidad de este repo: se prueba aquí.
+      - name: Pruebas del motor
+        run: npm test
+
+      - run: npm run build
+
+      - name: Comparar la huella con el backend en producción
+        # No bloquea el build —el backend puede estar desplegándose— pero deja
+        # el aviso donde se vea.
+        continue-on-error: true
+        run: |
+          LOCAL=$(grep -oP "(?<=HUELLA_MOTOR = ')[a-f0-9]+" src/core/huella.ts)
+          REMOTO=$(curl -sf --max-time 10 "${{ vars.API_URL }}/version" | grep -oP '(?<="motor":")[a-f0-9]+' || echo "sin-respuesta")
+          echo "frontend: $LOCAL" >> $GITHUB_STEP_SUMMARY
+          echo "backend:  $REMOTO" >> $GITHUB_STEP_SUMMARY
+          if [ "$LOCAL" != "$REMOTO" ] && [ "$REMOTO" != "sin-respuesta" ]; then
+            echo "⚠️ **Las copias del motor NO coinciden.** Sincroniza src/core/ antes de desplegar." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi

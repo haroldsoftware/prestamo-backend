@@ -1,0 +1,7 @@
+# Enrutamiento del lado del cliente.
+#
+# Sin esto, recargar en /prestamos/01JX... devuelve 404: ese archivo no existe
+# en el disco. Cloudflare sirve index.html y React resuelve la ruta.
+#
+# El 200 (no 301/302) es importante: la URL debe quedarse como estaba.
+/*    /index.html   200

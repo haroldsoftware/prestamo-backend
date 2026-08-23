@@ -1,0 +1,18 @@
+# Configuración para desplegar con la CLI de Cloudflare.
+#
+#   npx wrangler pages deploy dist --project-name prestamos
+#
+# Si prefieres conectar el repositorio de GitHub desde el panel de Cloudflare,
+# este archivo no hace falta. En ese caso configura en el panel:
+#
+#   Build command:      npm run build
+#   Build output:       dist
+#   Node version:       22
+#   Variable:           VITE_API_URL = https://TU-SERVICIO.run.app/api/v1
+#
+# La variable se lee EN EL BUILD, no en runtime: si la cambias, hay que volver
+# a desplegar.
+
+name = "prestamos"
+compatibility_date = "2026-01-01"
+pages_build_output_dir = "dist"
