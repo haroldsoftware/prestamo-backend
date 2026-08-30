@@ -19,6 +19,15 @@ export interface Yo {
   esParticipante: boolean
 }
 
+export interface UsuraVigente {
+  /** Interés bancario corriente certificado, efectivo anual (decimal: 0,19 = 19%). */
+  interesBancarioCorrienteEA: number
+  /** Tope de usura = 1,5 × el anterior, efectivo anual (decimal). */
+  usuraEA: number
+  fechaCertificacion: string
+  fuente: string
+}
+
 export interface Condiciones {
   montoPrincipal: number
   fechaDesembolso: string

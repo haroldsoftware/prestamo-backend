@@ -59,8 +59,9 @@ async function crudo(ruta: string, opciones: Opciones = {}): Promise<Response> {
 export async function api<T>(ruta: string, opciones: Opciones = {}): Promise<T> {
   let respuesta = await crudo(ruta, opciones)
 
-  // Un 401 puede ser solo que el access token de 15 minutos venció. Se intenta
-  // renovar una vez, en silencio, para que el usuario no vea nada.
+  // Un 401 puede ser solo que el access token venció (dura lo que diga
+  // ACCESS_TOKEN_TTL_MIN en el backend). Se intenta renovar una vez con la
+  // cookie httpOnly, en silencio, para que el usuario no vea nada.
   if (respuesta.status === 401 && !opciones.sinReintento && !ruta.startsWith('/auth/')) {
     const renovado = await renovarToken()
     if (renovado) {

@@ -6,9 +6,12 @@
  */
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { proyectar, tasaDesdePorcentaje, type Condiciones as CondicionesMotor } from '@core'
+import {
+  evaluarUsura, periodosPorAnio, proyectar, tasaADecimal, tasaDesdeDecimal, tasaDesdePorcentaje,
+  type Condiciones as CondicionesMotor,
+} from '@core'
 import { ErrorApi } from '../api/cliente'
-import { useCrearPrestamo } from '../api/hooks'
+import { useCrearPrestamo, useUsuraVigente } from '../api/hooks'
 import { Aviso, ConfirmacionEscrita } from '../componentes/base'
 import { TablaDesglose } from '../componentes/TablaDesglose'
 import { aNumero, hoyISO, numero, pesos, porcentaje } from '../lib/formato'
@@ -41,15 +44,32 @@ const INICIAL: Entrada = {
   cuotaPactada: 0, numeroCuotas: 12, autoConfirmarPagosDelPrestamista: false,
 }
 
+/**
+ * Respaldo para el caso raro en que el servidor exija la aceptación y el
+ * cálculo local no la haya detectado: la constancia nunca queda vacía.
+ */
+const TEXTO_ADVERTENCIA_GENERICO =
+  'La tasa pactada supera la tasa de usura vigente. Cobrar intereses por encima de ese tope ' +
+  'es delito en Colombia (artículo 305 del Código Penal). Declaro que leí esta advertencia y ' +
+  'que asumo la responsabilidad de pactar esta tasa.'
+
 export function NuevoPrestamo() {
   const [paso, setPaso] = useState(1)
   const [d, setD] = useState<Entrada>(INICIAL)
   const [confirmacion, setConfirmacion] = useState('')
+  const [aceptaUsura, setAceptaUsura] = useState(false)
+  const [servidorExigeUsura, setServidorExigeUsura] = useState(false)
   const [error, setError] = useState('')
   const crear = useCrearPrestamo()
+  const { data: usura } = useUsuraVigente()
   const navegar = useNavigate()
 
-  const set = <K extends keyof Entrada>(k: K, v: Entrada[K]) => setD((x) => ({ ...x, [k]: v }))
+  const set = <K extends keyof Entrada>(k: K, v: Entrada[K]) => {
+    // Si cambia la tasa o la periodicidad, la advertencia que el usuario aceptó
+    // ya no es la que aplica: hay que volver a mostrarla y volver a aceptarla.
+    if (k === 'tasaCorrienteMensualPct' || k === 'periodicidad') setAceptaUsura(false)
+    setD((x) => ({ ...x, [k]: v }))
+  }
 
   const condicionesMotor = useMemo((): CondicionesMotor | null => {
     if (!d.montoPrincipal) return null
@@ -84,6 +104,44 @@ export function NuevoPrestamo() {
   const planValido = previa && !('errorMensaje' in previa) ? previa : null
   const errorPlan = previa && 'errorMensaje' in previa ? previa.errorMensaje : null
 
+  // El mismo cálculo que hace el servidor antes de aceptar la creación: si la
+  // tasa pactada supera la usura vigente, el backend exige una aceptación
+  // explícita (400 requiereAceptacionUsura). Se evalúa aquí para que el usuario
+  // lo vea ANTES de darle a crear, no después de un error.
+  const evalUsura = useMemo(() => {
+    if (!usura) return null
+    return evaluarUsura(
+      tasaDesdePorcentaje(d.tasaCorrienteMensualPct),
+      periodosPorAnio(d.periodicidad),
+      tasaDesdeDecimal(usura.usuraEA),
+    )
+  }, [usura, d.tasaCorrienteMensualPct, d.periodicidad])
+
+  const excedeUsura = Boolean(evalUsura?.excede)
+
+  // Texto EXACTO de la advertencia: es el mismo que se muestra en pantalla y el
+  // que se manda al backend como constancia (ADVERTENCIA_USURA). Si divergieran,
+  // la constancia no probaría lo que el usuario realmente leyó.
+  // El servidor puede exigirla aunque el cálculo local diga que no (certificación
+  // recién actualizada), así que manda cualquiera de las dos señales.
+  const pedirAceptacionUsura = excedeUsura || servidorExigeUsura
+
+  const textoAdvertencia = useMemo(() => {
+    if (!evalUsura || !usura || !evalUsura.excede) return null
+    return [
+      `La tasa que estás pactando es de ${d.tasaCorrienteMensualPct}% mensual, ` +
+        `equivalente a ${porcentaje(tasaADecimal(evalUsura.pactadaEA) * 100)} efectivo anual.`,
+      `La tasa de usura vigente es ${porcentaje(usura.usuraEA * 100)} efectivo anual ` +
+        `(certificación: ${usura.fechaCertificacion}, fuente: ${usura.fuente}).`,
+      `Tu tasa la supera en ${porcentaje(evalUsura.excesoPuntos)} puntos porcentuales.`,
+      'Cobrar intereses por encima de la tasa de usura es delito en Colombia ' +
+        '(artículo 305 del Código Penal) y puede acarrear la pérdida de los intereses pactados.',
+      'Declaro que leí esta advertencia, que la tasa la fijé yo, y que asumo la ' +
+        'responsabilidad de pactarla por encima del tope legal. Esta plataforma no ' +
+        'certifica la tasa vigente: la verifico directamente con la Superintendencia Financiera.',
+    ].join('\n\n')
+  }, [evalUsura, usura, d.tasaCorrienteMensualPct])
+
   async function enviar() {
     setError('')
     try {
@@ -106,9 +164,20 @@ export function NuevoPrestamo() {
           numeroCuotas: d.modoCalculo === 'PLAZO_FIJO' ? d.numeroCuotas : undefined,
           autoConfirmarPagosDelPrestamista: d.autoConfirmarPagosDelPrestamista,
         },
+        aceptaAdvertenciaUsura: pedirAceptacionUsura && aceptaUsura ? true : undefined,
+        textoAdvertenciaAceptado:
+          pedirAceptacionUsura && aceptaUsura ? textoAdvertencia ?? TEXTO_ADVERTENCIA_GENERICO : undefined,
       })
       navegar(`/prestamos/${(creado as { id: string }).id}`)
     } catch (err) {
+      // El servidor tiene la última palabra sobre la usura vigente: si la
+      // certificación cambió mientras el formulario estaba abierto, pide la
+      // aceptación aunque el cálculo local dijera que no hacía falta.
+      const detalle = err instanceof ErrorApi ? (err.detalle as { requiereAceptacionUsura?: boolean } | undefined) : undefined
+      if (detalle?.requiereAceptacionUsura) {
+        setServidorExigeUsura(true)
+        setAceptaUsura(false)
+      }
       setError(err instanceof ErrorApi ? err.message : 'No pudimos registrar el préstamo')
     }
   }
@@ -189,6 +258,20 @@ export function NuevoPrestamo() {
                 <strong>{porcentaje((Math.pow(1 + d.tasaCorrienteMensualPct / 100, 12) - 1) * 100)}</strong>{' '}
                 efectivo anual, que es como se compara con la tasa de usura.
               </p>
+              {usura && !excedeUsura && (
+                <p className="ayuda">
+                  La usura vigente es {porcentaje(usura.usuraEA * 100)} efectivo anual. Estás por debajo.
+                </p>
+              )}
+              {excedeUsura && (
+                <div className="mt-3">
+                  <Aviso tipo="atencion" titulo="Esta tasa supera la usura vigente">
+                    Va {porcentaje(evalUsura?.excesoPuntos ?? 0)} puntos por encima del tope de{' '}
+                    {porcentaje((usura?.usuraEA ?? 0) * 100)} efectivo anual. Puedes seguir, pero
+                    en el último paso tendrás que aceptar la advertencia de forma expresa.
+                  </Aviso>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -374,6 +457,25 @@ export function NuevoPrestamo() {
               </>
             )}
 
+            {pedirAceptacionUsura && (
+              <Aviso tipo="atencion" titulo="Advertencia de usura — léela antes de continuar">
+                {/* Se muestra el MISMO texto que se envía como constancia. */}
+                <p className="whitespace-pre-line">{textoAdvertencia ?? TEXTO_ADVERTENCIA_GENERICO}</p>
+                <label className="mt-3 flex items-start gap-2 font-medium">
+                  <input
+                    type="checkbox" className="mt-1" checked={aceptaUsura}
+                    onChange={(e) => setAceptaUsura(e.target.checked)}
+                  />
+                  <span>
+                    Leí y acepto esta advertencia. Pacto esta tasa bajo mi responsabilidad.
+                  </span>
+                </label>
+                <p className="mt-2 text-xs">
+                  Tu aceptación queda registrada con fecha, hora y el texto exacto que acabas de leer.
+                </p>
+              </Aviso>
+            )}
+
             <ConfirmacionEscrita palabra="CREAR" valor={confirmacion} onChange={setConfirmacion} />
           </>
         )}
@@ -400,7 +502,11 @@ export function NuevoPrestamo() {
         ) : (
           <button
             className="btn-primario" onClick={() => void enviar()}
-            disabled={confirmacion !== 'CREAR' || crear.isPending}
+            disabled={
+              confirmacion !== 'CREAR' ||
+              crear.isPending ||
+              (pedirAceptacionUsura && !aceptaUsura)
+            }
           >
             {crear.isPending ? 'Registrando…' : 'Registrar préstamo'}
           </button>

@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@ta
 import { api } from './cliente'
 import type {
   Dashboard, DetallePrestamo, EntradaAuditoria, Invitacion, Pago, PagoPendiente,
-  Proyeccion, ResumenPrestamo, Yo,
+  Proyeccion, ResumenPrestamo, UsuraVigente, Yo,
 } from './tipos'
 
 export const claves = {
@@ -16,10 +16,25 @@ export const claves = {
   auditoria: (id: string) => ['auditoria', id] as const,
   pendientes: ['pagos-pendientes'] as const,
   invitacion: (codigo: string) => ['invitacion', codigo] as const,
+  usura: ['usura-vigente'] as const,
 }
 
 export function useYo(opciones?: Partial<UseQueryOptions<Yo>>) {
   return useQuery({ queryKey: claves.yo, queryFn: () => api<Yo>('/me'), ...opciones })
+}
+
+/**
+ * Tasa de usura vigente (endpoint público).
+ *
+ * Cambia una vez por trimestre: no tiene sentido volver a pedirla en cada
+ * navegación, pero tampoco cachearla para siempre.
+ */
+export function useUsuraVigente() {
+  return useQuery({
+    queryKey: claves.usura,
+    queryFn: () => api<UsuraVigente>('/config/usura'),
+    staleTime: 60 * 60 * 1000,
+  })
 }
 
 export function useDashboard() {
