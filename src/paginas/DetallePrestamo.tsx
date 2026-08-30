@@ -38,8 +38,10 @@ export function DetallePrestamo() {
         <Aviso tipo="atencion" titulo="Esta tasa supera la usura vigente">
           Se pactó al {porcentaje(p.condiciones.tasaCorrienteEA * 100)} efectivo anual y el tope
           certificado era {porcentaje((p.condiciones.usuraVigenteAlPactar?.valorEA ?? 0) * 100)}.
-          Cobrar por encima de la usura es delito en Colombia (art. 305 del Código Penal). Ambas
-          partes aceptaron esta advertencia de forma expresa y quedó registrada.
+          Cobrar por encima de la usura es delito en Colombia (art. 305 del Código Penal).{' '}
+          {p.estado === 'PENDIENTE_ACEPTACION' || p.estado === 'EN_NEGOCIACION'
+            ? 'Para aceptar, cada parte debe confirmar esta advertencia de forma expresa.'
+            : 'Ambas partes aceptaron esta advertencia de forma expresa y quedó registrada.'}
         </Aviso>
       )}
 
@@ -188,12 +190,27 @@ function PanelAceptacion({
   const negociar = useNegociar(p.id)
   const [cuota, setCuota] = useState(0)
   const [error, setError] = useState('')
+  const [aceptaUsura, setAceptaUsura] = useState(false)
   const yaAcepte = p.aceptaciones.some((a) => a.userId === miId)
 
   const TEXTO =
     `Acepto las condiciones de este préstamo: ${pesos(p.condiciones.montoPrincipal)} al ` +
     `${p.condiciones.tasaCorrienteMensualPct}% mensual, con cuota de ${pesos(p.condiciones.cuota)}. ` +
     `Entiendo que esta plataforma solo lleva el registro y no interviene en el acuerdo.`
+
+  // Si la tasa pactada supera la usura, el backend exige una constancia aparte
+  // (ADVERTENCIA_USURA) además de la de condiciones: sin ella devuelve 400 y la
+  // aceptación no avanza. Este es el texto EXACTO que se muestra y se envía.
+  const usuraEA = p.condiciones.usuraVigenteAlPactar?.valorEA
+  const TEXTO_USURA =
+    `Acepto este préstamo sabiendo que la tasa pactada es de ` +
+    `${porcentaje(p.condiciones.tasaCorrienteEA * 100)} efectivo anual y que la tasa de usura ` +
+    `vigente al pactarlo era de ${porcentaje((usuraEA ?? 0) * 100)} efectivo anual` +
+    `${usuraEA !== undefined ? `, es decir ${porcentaje((p.condiciones.tasaCorrienteEA - usuraEA) * 100)} puntos por encima` : ''}.\n\n` +
+    `Cobrar intereses por encima de la tasa de usura es delito en Colombia (artículo 305 del ` +
+    `Código Penal) y puede acarrear la pérdida de los intereses pactados.\n\n` +
+    `Declaro que leí esta advertencia, que la entiendo, y que aun así acepto estas condiciones. ` +
+    `Esta plataforma no certifica la tasa vigente: la verifico con la Superintendencia Financiera.`
 
   return (
     <div className="tarjeta border-marca-300 bg-marca-50/40">
@@ -224,14 +241,37 @@ function PanelAceptacion({
 
       {!yaAcepte && (
         <>
+          {p.condiciones.excedeUsura && (
+            <div className="mt-4">
+              <Aviso tipo="atencion" titulo="Advertencia de usura — léela antes de aceptar">
+                <p className="whitespace-pre-line">{TEXTO_USURA}</p>
+                <label className="mt-3 flex items-start gap-2 font-medium">
+                  <input
+                    type="checkbox" className="mt-1" checked={aceptaUsura}
+                    onChange={(e) => setAceptaUsura(e.target.checked)}
+                  />
+                  <span>Leí y acepto esta advertencia.</span>
+                </label>
+                <p className="mt-2 text-xs">
+                  Tu aceptación queda registrada con fecha, hora y el texto exacto que acabas de leer.
+                </p>
+              </Aviso>
+            </div>
+          )}
+
           <div className="mt-4 flex flex-wrap gap-3">
             <button
               className="btn-primario"
-              disabled={aceptar.isPending}
+              disabled={aceptar.isPending || (p.condiciones.excedeUsura && !aceptaUsura)}
               onClick={() =>
-                void aceptar.mutateAsync({ textoAceptado: TEXTO }).catch((e) =>
-                  setError(e instanceof ErrorApi ? e.message : 'No pudimos registrar tu aceptación'),
-                )
+                void aceptar
+                  .mutateAsync({
+                    textoAceptado: TEXTO,
+                    textoAdvertenciaUsura: p.condiciones.excedeUsura ? TEXTO_USURA : undefined,
+                  })
+                  .catch((e) =>
+                    setError(e instanceof ErrorApi ? e.message : 'No pudimos registrar tu aceptación'),
+                  )
               }
             >
               Acepto estas condiciones
