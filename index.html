@@ -18,7 +18,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Cuentas Claras" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "default": la barra de estado tiene su propio fondo (sigue a theme-color) y el
+         contenido empieza debajo. Con "black-translucent" iOS difuminaba lo que pasaba
+         por debajo y se veía una sombra borrosa arriba. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="format-detection" content="telephone=no" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
