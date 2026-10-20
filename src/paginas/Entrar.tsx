@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ErrorApi } from '../api/cliente'
 import { useSesion } from '../hooks/sesion'
 import { Aviso } from '../componentes/base'
+import { CampoContrasena } from '../componentes/CampoContrasena'
 import { MarcoAuth } from '../componentes/MarcoAuth'
 
 export function Entrar() {
@@ -43,8 +44,8 @@ export function Entrar() {
         </div>
         <div>
           <label className="etiqueta" htmlFor="password">Contraseña</label>
-          <input
-            id="password" type="password" className="campo" value={password} required
+          <CampoContrasena
+            id="password" value={password} required
             autoComplete="current-password" onChange={(e) => setPassword(e.target.value)}
           />
         </div>

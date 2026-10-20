@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { api, ErrorApi } from '../api/cliente'
 import { Aviso } from '../componentes/base'
+import { CampoContrasena, MIN_CONTRASENA } from '../componentes/CampoContrasena'
 import { MarcoAuth } from '../componentes/MarcoAuth'
 
 export function Recuperar() {
@@ -66,12 +67,12 @@ export function Restablecer() {
         {error && <Aviso tipo="error">{error}</Aviso>}
         <div>
           <label className="etiqueta" htmlFor="password">Contraseña nueva</label>
-          <input
-            id="password" type="password" className="campo" required minLength={10}
+          <CampoContrasena
+            id="password" required minLength={MIN_CONTRASENA}
             autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)}
           />
           <p className="ayuda">
-            Al cambiarla cerramos todas tus sesiones abiertas, por si alguien más entró.
+            Mínimo {MIN_CONTRASENA} caracteres. Al cambiarla cerramos todas tus sesiones abiertas, por si alguien más entró.
           </p>
         </div>
         <button className="btn-primario w-full">Cambiar contraseña</button>

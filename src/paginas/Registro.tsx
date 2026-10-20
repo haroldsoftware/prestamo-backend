@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, ErrorApi } from '../api/cliente'
 import { Aviso } from '../componentes/base'
 import { IconoCorreo } from '../componentes/Iconos'
+import { CampoContrasena, MIN_CONTRASENA } from '../componentes/CampoContrasena'
 import { MarcoAuth } from '../componentes/MarcoAuth'
 
 export function Registro() {
@@ -62,12 +63,14 @@ export function Registro() {
         </div>
         <div>
           <label className="etiqueta" htmlFor="password">Contraseña</label>
-          <input
-            id="password" type="password" className="campo" required minLength={10}
+          <CampoContrasena
+            id="password" required minLength={MIN_CONTRASENA}
             autoComplete="new-password" value={datos.password}
             onChange={(e) => setDatos({ ...datos, password: e.target.value })}
           />
-          <p className="ayuda">Mínimo 10 caracteres.</p>
+          <p className={`ayuda ${datos.password.length >= MIN_CONTRASENA ? 'text-exito' : ''}`}>
+            {datos.password.length >= MIN_CONTRASENA ? '✓ ' : ''}Mínimo {MIN_CONTRASENA} caracteres.
+          </p>
         </div>
         <button className="btn-primario w-full" disabled={estado === 'enviando'}>
           {estado === 'enviando' ? 'Creando…' : 'Crear cuenta'}
