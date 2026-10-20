@@ -32,16 +32,25 @@ export function Invitacion() {
 
   const c = data.condiciones
   const venta = esVenta(data)
+  const personal = data.modo === 'PERSONAL'
 
   return (
     <MarcoAuth
-      titulo={venta ? `${data.prestamista} registró una venta a cuotas contigo` : `${data.prestamista} registró un préstamo contigo`}
+      titulo={personal
+        ? `${data.prestamista} te invita a llevar juntos esta cuenta`
+        : venta ? `${data.prestamista} registró una venta a cuotas contigo` : `${data.prestamista} registró un préstamo contigo`}
       subtitulo="Míralo con calma. No pasa nada hasta que tú lo aceptes."
     >
       <div className="space-y-4">
         <div className="tarjeta p-5">
           <p className="text-[13px] font-medium text-texto-2">{venta ? `Valor total${data.concepto ? ` · ${data.concepto}` : ''}` : 'Te prestaría'}</p>
           <p className="cifra text-[38px] font-bold leading-tight">{pesos(c.montoPrincipal)}</p>
+          {personal && data.saldoActual !== undefined && (
+            <p className="mt-1 text-[15px] text-texto-2">
+              Saldo hoy: <strong className="cifra text-texto">{pesos(data.saldoActual)}</strong>. Lo llevaba{' '}
+              {data.prestamista} por su cuenta; si aceptas, desde ahora cada pago lo confirman los dos.
+            </p>
+          )}
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-superficie-2 p-3">
               <p className="text-[12px] text-texto-2">Pagarías cada mes</p>

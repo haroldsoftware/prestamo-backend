@@ -193,6 +193,22 @@ export function useAnularPago(loanId: string) {
   })
 }
 
+export function useInvitarContraparte(id: string) {
+  const refrescar = useRefrescarPrestamo(id)
+  return useMutation({
+    mutationFn: (email: string) => api<DetallePrestamo>(`/loans/${id}/invitar`, { metodo: 'POST', cuerpo: { email } }),
+    onSuccess: refrescar,
+  })
+}
+
+export function useUnirse(id: string) {
+  const refrescar = useRefrescarPrestamo(id)
+  return useMutation({
+    mutationFn: (textoAceptado: string) => api<DetallePrestamo>(`/loans/${id}/unirse`, { metodo: 'POST', cuerpo: { textoAceptado } }),
+    onSuccess: refrescar,
+  })
+}
+
 export function useInvitarParticipante(id: string) {
   const refrescar = useRefrescarPrestamo(id)
   return useMutation({

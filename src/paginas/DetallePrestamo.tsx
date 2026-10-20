@@ -1,10 +1,10 @@
 import { useState, type ReactNode } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { descargar, ErrorApi } from '../api/cliente'
 import {
   useAceptar, useAnularPago, useAuditoria, useAutorizarParticipante, useConfirmarPago,
   useInvitarParticipante, useNegociar, usePagos, usePlan, usePrestamo, useRechazar,
-  useRechazarPago, useRegistrarPago, useRevocarParticipante, useYo,
+  useInvitarContraparte, useRechazarPago, useRegistrarPago, useRevocarParticipante, useUnirse, useYo,
 } from '../api/hooks'
 import type { DetallePrestamo as TDetalle, Pago } from '../api/tipos'
 import {
@@ -16,7 +16,7 @@ import {
 import { Pantalla } from '../componentes/Pantalla'
 import { TablaDesglose } from '../componentes/TablaDesglose'
 import { avance } from '../componentes/TarjetaPrestamo'
-import { esVenta, nombreRegistro, subtitulo } from '../lib/vocabulario'
+import { esPersonal, esVenta, nombreRegistro, subtitulo } from '../lib/vocabulario'
 import { aNumero, fechaLarga, hoyISO, numero, pesos, porcentaje } from '../lib/formato'
 
 type Pestana = 'resumen' | 'plan' | 'pagos' | 'gente' | 'historial'
@@ -53,7 +53,9 @@ export function DetallePrestamo() {
   const miId = yo?.id ?? ''
   const porConfirmar = (pagos ?? []).filter((x) => x.estado === 'PENDIENTE' && x.registradoPor !== miId).length
   const negociando = p.estado === 'PENDIENTE_ACEPTACION' || p.estado === 'EN_NEGOCIACION'
-  const puedeRegistrar = p.estado === 'ACTIVO' && ['PRESTAMISTA', 'DEUDOR', 'CODEUDOR'].includes(p.rol ?? '')
+  // Invitado a un registro personal: solo mira hasta aceptar el saldo.
+  const invitadoSinUnirse = esPersonal(p) && !p.esDueno
+  const puedeRegistrar = p.estado === 'ACTIVO' && !invitadoSinUnirse && ['PRESTAMISTA', 'DEUDOR', 'CODEUDOR'].includes(p.rol ?? '')
 
   return (
     <Pantalla
@@ -70,6 +72,7 @@ export function DetallePrestamo() {
             </p>
             <div className="mt-1.5 flex gap-1.5">
               {esVenta(p) && <span className="insignia bg-[#8b5cf6]/12 text-[#7c3aed] dark:text-[#c4b5fd]">Venta a cuotas</span>}
+              {esPersonal(p) && <span className="insignia bg-superficie-2 text-texto-2">Personal</span>}
               <Insignia estado={p.estado} />
               {p.enMora && <Insignia estado="MORA" />}
             </div>
@@ -90,6 +93,9 @@ export function DetallePrestamo() {
         )}
 
         {negociando && <PanelAceptacion prestamo={p} miId={miId} />}
+
+        {esPersonal(p) && p.esDueno && <PanelPersonal prestamo={p} />}
+        {invitadoSinUnirse && <PanelUnirse prestamo={p} />}
 
         {p.estado === 'ACTIVO' && <HeroSaldo p={p} />}
 
@@ -140,7 +146,9 @@ export function DetallePrestamo() {
           {pestana === 'pagos' && (
             <Pagos id={id} prestamo={p} miId={miId} alRegistrar={puedeRegistrar ? () => setRegistrando(true) : undefined} />
           )}
-          {pestana === 'gente' && <Gente id={id} prestamo={p} />}
+          {pestana === 'gente' && (esPersonal(p)
+            ? <Aviso tipo="info" titulo="Solo tú ves este registro">Para sumar a alguien más, primero invita a la otra parte y que acepte.</Aviso>
+            : <Gente id={id} prestamo={p} />)}
           {pestana === 'historial' && <Historial id={id} />}
         </div>
       </div>
@@ -264,6 +272,109 @@ function Resumen({ prestamo: p }: { prestamo: TDetalle }) {
           </p>
         )}
       </section>
+    </div>
+  )
+}
+
+/** Dueño de un registro personal: qué significa y cómo compartirlo. */
+function PanelPersonal({ prestamo: p }: { prestamo: TDetalle }) {
+  const invitar = useInvitarContraparte(p.id)
+  const toast = useToast()
+  const [abierta, setAbierta] = useState(false)
+  const [email, setEmail] = useState('')
+  const nombre = p.contraparte.nombre
+  return (
+    <div className="tarjeta">
+      <div className="flex items-start gap-3.5">
+        <IconoEnCaja color="#64748b"><IconoPersonas tam={22} /></IconoEnCaja>
+        <div className="min-w-0 flex-1">
+          <p className="text-[16px] font-semibold">Registro personal</p>
+          <p className="text-[14px] text-texto-2">
+            Solo tú lo ves. Los pagos que registras quedan en firme sin que nadie los confirme, así
+            que sirve para tu control pero no como prueba ante {nombre}.
+          </p>
+        </div>
+      </div>
+      {p.invitacionPendiente ? (
+        <div className="mt-3.5 flex items-center justify-between gap-3 rounded-2xl bg-superficie-2 px-4 py-3">
+          <p className="min-w-0 text-[14px]">
+            Invitación enviada a <strong className="break-all">{p.invitacionPendiente.email}</strong>. Falta que acepte.
+          </p>
+          <button className="enlace shrink-0 text-[14px]" onClick={() => { setEmail(p.invitacionPendiente!.email); setAbierta(true) }}>Cambiar</button>
+        </div>
+      ) : (
+        <button className="btn-tonal mt-3.5 w-full" onClick={() => setAbierta(true)}>
+          <span className="truncate">Invitar a {nombre}</span>
+        </button>
+      )}
+      <Hoja abierta={abierta} alCerrar={() => setAbierta(false)} titulo={`Invitar a ${nombre}`}>
+        <div className="space-y-4">
+          <p className="text-[15px] text-texto-2">
+            Le llega un correo con las condiciones, el historial y el saldo de hoy (
+            <strong className="cifra text-texto">{pesos(p.saldo.capital)}</strong>). Cuando lo acepte, cada pago nuevo
+            lo confirmará la otra parte. Hasta entonces, todo sigue como ahora.
+          </p>
+          <div>
+            <label className="etiqueta" htmlFor="emailContraparte">Correo de {nombre}</label>
+            <input id="emailContraparte" type="email" inputMode="email" autoCapitalize="none" className="campo"
+              value={email} onChange={(e) => setEmail(e.target.value)} placeholder="correo@ejemplo.com" />
+          </div>
+          <button
+            className="btn-primario w-full"
+            disabled={!email.includes('@') || invitar.isPending}
+            onClick={() => void invitar.mutateAsync(email)
+              .then(() => { setAbierta(false); toast({ tipo: 'exito', texto: `Invitación enviada a ${email}` }) })
+              .catch((e) => toast({ tipo: 'error', texto: mensaje(e, 'No pudimos enviar la invitación') }))}
+          >
+            {invitar.isPending ? 'Enviando…' : 'Enviar invitación'}
+          </button>
+        </div>
+      </Hoja>
+    </div>
+  )
+}
+
+/** Invitado a un registro personal: acepta el saldo de hoy o dice que no lo reconoce. */
+function PanelUnirse({ prestamo: p }: { prestamo: TDetalle }) {
+  const unirse = useUnirse(p.id)
+  const rechazar = useRechazar(p.id)
+  const toast = useToast()
+  const navegar = useNavigate()
+  const [error, setError] = useState('')
+  const quien = p.contraparte.nombre
+  const que = esVenta(p) ? `la venta a cuotas${p.concepto ? ` de ${p.concepto}` : ''}` : 'el préstamo'
+  // Texto EXACTO que queda como constancia.
+  const TEXTO =
+    `Acepto que ${que} con ${quien} tiene hoy un saldo de ${pesos(p.saldo.capital)}, sobre un total de ` +
+    `${pesos(p.montoPrincipal)}${p.condiciones.cuota ? ` con cuotas de ${pesos(p.condiciones.cuota)}` : ''}. ` +
+    `Sé que los pagos registrados hasta hoy los registró ${quien} sin mi confirmación, y que desde ahora ` +
+    `cada pago nuevo lo confirmará la otra parte.`
+  return (
+    <div className="tarjeta ring-2 ring-marca/40">
+      <div className="flex items-center gap-3">
+        <IconoEnCaja color="#2f9488"><IconoPersonas tam={22} /></IconoEnCaja>
+        <h2 className="text-[17px] font-bold">{quien} te invitó a llevar esta cuenta juntos</h2>
+      </div>
+      <p className="mt-3 rounded-2xl bg-superficie-2 px-4 py-3 text-[14px] leading-snug">{TEXTO}</p>
+      {error && <div className="mt-3"><Aviso tipo="error">{error}</Aviso></div>}
+      <div className="mt-4 grid grid-cols-2 gap-2.5">
+        <button
+          className="btn-primario px-3" disabled={unirse.isPending}
+          onClick={() => void unirse.mutateAsync(TEXTO)
+            .then(() => toast({ tipo: 'exito', texto: 'Listo: ahora llevan la cuenta juntos' }))
+            .catch((e) => setError(mensaje(e, 'No pudimos registrar tu aceptación')))}
+        >
+          {unirse.isPending ? 'Aceptando…' : 'Acepto este saldo'}
+        </button>
+        <button
+          className="btn-peligro px-3" disabled={rechazar.isPending}
+          onClick={() => void rechazar.mutateAsync()
+            .then(() => { toast({ tipo: 'info', texto: 'Listo: no verás más este registro' }); navegar('/prestamos', { replace: true }) })
+            .catch((e) => setError(mensaje(e, 'No pudimos registrar tu respuesta')))}
+        >
+          No lo reconozco
+        </button>
+      </div>
     </div>
   )
 }
@@ -741,7 +852,10 @@ function CabeceraPago({ pago, compacta }: { pago: Pago; compacta?: boolean }) {
           </p>
         )}
       </div>
-      <Insignia estado={pago.estado} />
+      <div className="flex flex-col items-end gap-1">
+        <Insignia estado={pago.estado} />
+        {pago.registroPersonal && <span className="insignia bg-superficie-2 text-texto-3">Sin confirmación</span>}
+      </div>
     </div>
   )
 }

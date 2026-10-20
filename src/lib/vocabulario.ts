@@ -19,10 +19,17 @@ export function textoRol(p: { tipo?: TipoRegistro; rol: RolPrestamo | null }): s
   return ROLES[p.tipo ?? 'PRESTAMO'][p.rol ?? ''] ?? (esVenta(p) ? 'Venta a cuotas' : 'Préstamo')
 }
 
+export function esPersonal(p: { modo?: string } | null | undefined): boolean {
+  return p?.modo === 'PERSONAL'
+}
+
 /** Lo que se muestra bajo el nombre: el concepto de la venta o la descripción. */
-export function subtitulo(p: { tipo?: TipoRegistro; rol: RolPrestamo | null; concepto?: string; descripcion?: string }): string {
+export function subtitulo(p: {
+  tipo?: TipoRegistro; rol: RolPrestamo | null; concepto?: string; descripcion?: string; modo?: string; esDueno?: boolean
+}): string {
   const extra = esVenta(p) ? p.concepto : p.descripcion
-  return `${textoRol(p)}${extra ? ` · ${extra}` : ''}`
+  const personal = esPersonal(p) ? (p.esDueno ? ' · Solo tú' : ' · Te invitaron') : ''
+  return `${textoRol(p)}${extra ? ` · ${extra}` : ''}${personal}`
 }
 
 export function nombreRegistro(p: { tipo?: TipoRegistro }, articulo = false): string {

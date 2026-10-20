@@ -21,6 +21,9 @@ import { aNumero, hoyISO, numero, pesos, porcentaje } from '../lib/formato'
 type Entrada = {
   tipo: 'PRESTAMO' | 'VENTA_CUOTAS'
   concepto: string
+  modo: 'COMPARTIDO' | 'PERSONAL'
+  contraparteNombre: string
+  rolDueno: 'ACREEDOR' | 'DEUDOR'
   emailDeudor: string
   descripcion: string
   montoPrincipal: number
@@ -41,7 +44,7 @@ type Entrada = {
 }
 
 const INICIAL: Entrada = {
-  tipo: 'PRESTAMO', concepto: '',
+  tipo: 'PRESTAMO', concepto: '', modo: 'COMPARTIDO', contraparteNombre: '', rolDueno: 'ACREEDOR',
   emailDeudor: '', descripcion: '', montoPrincipal: 0, fechaDesembolso: hoyISO(),
   tasaCorrienteMensualPct: 2, modoMora: 'SIN_MORA', tasaMoraMensualPct: 3,
   modoCalculo: 'CUOTA_FIJA', periodicidad: 'MENSUAL', diaCorte: 30,
@@ -64,6 +67,9 @@ export function NuevoPrestamo() {
   const [d, setD] = useState<Entrada>(() => ({ ...INICIAL, tipo: params.get('tipo') === 'venta' ? 'VENTA_CUOTAS' : 'PRESTAMO' }))
   // Una venta a cuotas no lleva interés ni mora: se ignoran esos campos.
   const venta = d.tipo === 'VENTA_CUOTAS'
+  const personal = d.modo === 'PERSONAL'
+  // En personal el dueño puede ser quien debe; en compartido siempre es quien presta o vende.
+  const yoDebo = personal && d.rolDueno === 'DEUDOR'
   const tasaPct = venta ? 0 : d.tasaCorrienteMensualPct
   const modoMora: Entrada['modoMora'] = venta ? 'SIN_MORA' : d.modoMora
   const [confirmacion, setConfirmacion] = useState('')
@@ -160,7 +166,10 @@ export function NuevoPrestamo() {
       const creado = await crear.mutateAsync({
         tipo: d.tipo,
         concepto: venta ? d.concepto.trim() : undefined,
-        emailDeudor: d.emailDeudor,
+        modo: d.modo,
+        contraparteNombre: personal ? d.contraparteNombre.trim() : undefined,
+        rolDueno: personal ? d.rolDueno : 'ACREEDOR',
+        emailDeudor: personal ? undefined : d.emailDeudor,
         descripcion: d.descripcion || undefined,
         condiciones: {
           montoPrincipal: d.montoPrincipal,
@@ -176,7 +185,7 @@ export function NuevoPrestamo() {
           correrADiaHabil: d.correrADiaHabil,
           cuotaPactada: d.modoCalculo === 'CUOTA_FIJA' ? d.cuotaPactada : undefined,
           numeroCuotas: d.modoCalculo === 'PLAZO_FIJO' ? d.numeroCuotas : undefined,
-          autoConfirmarPagosDelPrestamista: d.autoConfirmarPagosDelPrestamista,
+          autoConfirmarPagosDelPrestamista: personal ? false : d.autoConfirmarPagosDelPrestamista,
         },
         aceptaAdvertenciaUsura: pedirAceptacionUsura && aceptaUsura ? true : undefined,
         textoAdvertenciaAceptado:
@@ -238,6 +247,59 @@ export function NuevoPrestamo() {
                 ))}
               </div>
             </fieldset>
+            <fieldset>
+              <legend className="etiqueta">¿Quién lleva la cuenta?</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ['COMPARTIDO', 'Los dos', 'La otra persona acepta y confirma cada pago'],
+                  ['PERSONAL', 'Solo yo', 'No se le avisa a nadie. Puedes invitarla después'],
+                ] as const).map(([valor, titulo, ayuda]) => (
+                  <label
+                    key={valor}
+                    className={`block cursor-pointer rounded-2xl p-3.5 text-[15px] transition active:scale-[0.98] ${
+                      d.modo === valor ? 'bg-texto text-fondo' : 'bg-superficie-2'
+                    }`}
+                  >
+                    <input type="radio" name="modo-registro" className="sr-only" checked={d.modo === valor} onChange={() => set('modo', valor)} />
+                    <span className="block font-semibold">{titulo}</span>
+                    <span className="text-[13px] opacity-70">{ayuda}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+
+            {personal ? (
+              <>
+                <div>
+                  <span className="etiqueta">¿Tú qué eres en esta cuenta?</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      ['ACREEDOR', venta ? 'Yo vendí' : 'Yo presté'],
+                      ['DEUDOR', venta ? 'Yo compré' : 'Me prestaron'],
+                    ] as const).map(([valor, texto]) => (
+                      <button
+                        key={valor} type="button" onClick={() => set('rolDueno', valor)}
+                        className={`rounded-2xl px-3 py-3 text-[15px] font-semibold transition active:scale-95 ${
+                          d.rolDueno === valor ? 'bg-marca-solido text-marca-sobre' : 'bg-superficie-2 text-texto-2'
+                        }`}
+                      >
+                        {texto}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="etiqueta" htmlFor="contraparte">
+                    {yoDebo ? (venta ? '¿A quién le compraste?' : '¿Quién te prestó?') : (venta ? '¿A quién le vendiste?' : '¿A quién le prestaste?')}
+                  </label>
+                  <input
+                    id="contraparte" className="campo" value={d.contraparteNombre} maxLength={120} autoComplete="off"
+                    onChange={(e) => set('contraparteNombre', e.target.value)} placeholder={venta ? 'Acme S.A.S.' : 'Laura Méndez'}
+                  />
+                  <p className="ayuda">Solo el nombre: no le llega nada. Si quieres, después la invitas y confirman juntos.</p>
+                </div>
+              </>
+            ) : (
             <div>
               <label className="etiqueta" htmlFor="deudor">{venta ? '¿A quién le vendes?' : '¿A quién le prestas?'}</label>
               <input
@@ -249,6 +311,7 @@ export function NuevoPrestamo() {
                 registrarse, y {venta ? 'la venta' : 'el préstamo'} solo empieza cuando la acepte.
               </p>
             </div>
+            )}
             {venta ? (
               <div>
                 <label className="etiqueta" htmlFor="concepto">¿Qué vendiste?</label>
@@ -466,6 +529,7 @@ export function NuevoPrestamo() {
               </span>
             </label>
 
+            {!personal && (
             <label className="flex items-start gap-3 rounded-2xl bg-superficie-2 p-3.5 text-[14px] leading-snug">
               <input
                 type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--c-marca-solido))]" checked={d.autoConfirmarPagosDelPrestamista}
@@ -478,6 +542,7 @@ export function NuevoPrestamo() {
                 mal registrado es más molesto que confirmarlo.
               </span>
             </label>
+            )}
           </>
         )}
 
@@ -485,7 +550,16 @@ export function NuevoPrestamo() {
           <>
             {error && <Aviso tipo="error">{error}</Aviso>}
             <div className="grid grid-cols-1 gap-3">
-              <div><p className="text-sm text-texto-2">{venta ? 'Le vendes a' : 'Le prestas a'}</p><p className="font-semibold">{d.emailDeudor}</p></div>
+              <div>
+                <p className="text-sm text-texto-2">
+                  {yoDebo ? (venta ? 'Le compras a' : 'Te prestó') : (venta ? 'Le vendes a' : 'Le prestas a')}
+                </p>
+                <p className="font-semibold">{personal ? d.contraparteNombre : d.emailDeudor}</p>
+              </div>
+              <div>
+                <p className="text-sm text-texto-2">Quién lleva la cuenta</p>
+                <p className="font-semibold">{personal ? 'Solo tú: no se le avisa a nadie' : 'Los dos: la otra persona acepta y confirma los pagos'}</p>
+              </div>
               {venta && <div><p className="text-sm text-texto-2">Qué vendiste</p><p className="font-semibold">{d.concepto}</p></div>}
               <div><p className="text-sm text-texto-2">{venta ? 'Valor total' : 'Monto'}</p><p className="font-semibold">{pesos(d.montoPrincipal)}</p></div>
               <div><p className="text-sm text-texto-2">Interés</p><p className="font-semibold">{venta ? 'Sin interés' : `${d.tasaCorrienteMensualPct}% mensual`}</p></div>
@@ -555,7 +629,7 @@ export function NuevoPrestamo() {
           <button
             className="btn-primario w-full" onClick={() => setPaso((p) => p + 1)}
             disabled={
-              (paso === 1 && (!d.emailDeudor.includes('@') || (venta && d.concepto.trim().length < 2))) ||
+              (paso === 1 && ((personal ? d.contraparteNombre.trim().length < 2 : !d.emailDeudor.includes('@')) || (venta && d.concepto.trim().length < 2))) ||
               (paso === 2 && d.montoPrincipal <= 0) ||
               (paso === 3 && (Boolean(errorPlan) || (d.modoCalculo === 'CUOTA_FIJA' && !d.cuotaPactada)))
             }

@@ -3,6 +3,8 @@ import type { Estado, FilaDesglose, Proyeccion } from '@core'
 export type { Estado, FilaDesglose, Proyeccion }
 
 export type TipoRegistro = 'PRESTAMO' | 'VENTA_CUOTAS'
+/** PERSONAL: lo lleva una sola persona, sin notificar a nadie. */
+export type ModoRegistro = 'COMPARTIDO' | 'PERSONAL'
 export type RolPrestamo = 'PRESTAMISTA' | 'DEUDOR' | 'CODEUDOR' | 'OBSERVADOR'
 export type EstadoPrestamo =
   | 'BORRADOR' | 'EN_NEGOCIACION' | 'PENDIENTE_ACEPTACION'
@@ -55,6 +57,11 @@ export interface ResumenPrestamo {
   tipo: TipoRegistro
   /** En una venta: qué se vendió. */
   concepto?: string
+  modo: ModoRegistro
+  /** ¿Lo creé yo? */
+  esDueno: boolean
+  invitacionPendiente: { email: string } | null
+  compartidoDesde?: string
   rol: RolPrestamo | null
   estado: EstadoPrestamo
   descripcion?: string
@@ -107,6 +114,8 @@ export interface Pago {
   intencion: 'CUOTA' | 'PARCIAL' | 'ABONO_CAPITAL'
   estado: EstadoPago
   autoConfirmado: boolean
+  /** Registrado cuando era un registro personal: nadie más lo confirmó. */
+  registroPersonal?: boolean
   nota?: string
   registradoPor: string
   registradoEn: string
@@ -163,6 +172,9 @@ export interface Invitacion {
   loanId: string
   tipo?: TipoRegistro
   concepto?: string
+  modo?: ModoRegistro
+  saldoActual?: number
+  rolInvitado?: 'PRESTAMISTA' | 'DEUDOR'
   estado: EstadoPrestamo
   descripcion?: string
   prestamista: string
