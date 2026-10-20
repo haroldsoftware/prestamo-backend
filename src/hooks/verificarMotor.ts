@@ -16,8 +16,8 @@
  */
 import { useEffect, useState } from 'react'
 import { HUELLA_MOTOR } from '@core'
+import { BASE } from '../api/cliente'
 
-const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
 
 export type EstadoMotor =
   | { estado: 'verificando' }

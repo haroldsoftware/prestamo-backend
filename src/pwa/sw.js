@@ -43,22 +43,32 @@ self.addEventListener('fetch', (evento) => {
 
   if (request.mode === 'navigate') {
     evento.respondWith(
-      fetch(request).catch(async () => (await caches.match('/')) ?? Response.error()),
+      (async () => {
+        try {
+          return await fetch(request)
+        } catch {
+          // Sin conexión: la última interfaz guardada.
+          return (await caches.match('/')) ?? Response.error()
+        }
+      })(),
     )
     return
   }
 
+  // Solo se atienden los archivos del build; lo demás va directo a la red,
+  // sin que el service worker pueda romperlo.
+  if (!url.pathname.startsWith('/assets/') && !PRECACHE.includes(url.pathname)) return
+
   evento.respondWith(
-    caches.match(request).then(
-      (guardado) =>
-        guardado ??
-        fetch(request).then((respuesta) => {
-          if (respuesta.ok && url.pathname.startsWith('/assets/')) {
-            const copia = respuesta.clone()
-            void caches.open(CACHE).then((c) => c.put(request, copia))
-          }
-          return respuesta
-        }),
-    ),
+    (async () => {
+      const guardado = await caches.match(request)
+      if (guardado) return guardado
+      const respuesta = await fetch(request)
+      if (respuesta.ok && url.pathname.startsWith('/assets/')) {
+        const copia = respuesta.clone()
+        void caches.open(CACHE).then((c) => c.put(request, copia))
+      }
+      return respuesta
+    })(),
   )
 })

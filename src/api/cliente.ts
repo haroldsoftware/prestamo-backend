@@ -7,7 +7,16 @@
  * token nuevo con esa cookie.
  */
 
-const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
+/**
+ * Base de la API: SIEMPRE el mismo dominio.
+ *
+ * En producción functions/api/[[ruta]].js reenvía /api/* a Cloud Run; en
+ * desarrollo lo hace el proxy de Vite. Una URL absoluta a otro dominio (p. ej.
+ * *.run.app) se ignora a propósito: el iPhone bloquea la cookie de sesión entre
+ * dominios y la CSP solo permite 'self'. Solo se respeta una ruta relativa.
+ */
+const configurada = import.meta.env.VITE_API_URL
+export const BASE = configurada && configurada.startsWith('/') ? configurada : '/api/v1'
 
 let accessToken: string | null = null
 let alExpirar: (() => void) | null = null
