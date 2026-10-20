@@ -3,8 +3,13 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BrowserRouter } from 'react-router-dom'
 import { App } from './App'
+import { ProveedorToasts } from './componentes/base'
 import { ProveedorSesion } from './hooks/sesion'
+import './hooks/privacidad'
+import { registrarServiceWorker } from './pwa/registro'
 import './index.css'
+
+registrarServiceWorker()
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -25,9 +30,11 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={qc}>
       <BrowserRouter>
-        <ProveedorSesion>
-          <App />
-        </ProveedorSesion>
+        <ProveedorToasts>
+          <ProveedorSesion>
+            <App />
+          </ProveedorSesion>
+        </ProveedorToasts>
       </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,

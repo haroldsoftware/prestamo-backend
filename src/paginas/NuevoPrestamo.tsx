@@ -4,7 +4,8 @@
  * El paso final muestra el plan de pagos COMPLETO antes de confirmar: nadie
  * debería aceptar un préstamo sin ver cuánto va a pagar de intereses en total.
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   evaluarUsura, periodosPorAnio, proyectar, tasaADecimal, tasaDesdeDecimal, tasaDesdePorcentaje,
@@ -13,6 +14,7 @@ import {
 import { ErrorApi } from '../api/cliente'
 import { useCrearPrestamo, useUsuraVigente } from '../api/hooks'
 import { Aviso, ConfirmacionEscrita } from '../componentes/base'
+import { Pantalla } from '../componentes/Pantalla'
 import { TablaDesglose } from '../componentes/TablaDesglose'
 import { aNumero, hoyISO, numero, pesos, porcentaje } from '../lib/formato'
 
@@ -63,6 +65,8 @@ export function NuevoPrestamo() {
   const crear = useCrearPrestamo()
   const { data: usura } = useUsuraVigente()
   const navegar = useNavigate()
+  // Cada paso empieza arriba, como una pantalla nueva.
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'smooth' }) }, [paso])
 
   const set = <K extends keyof Entrada>(k: K, v: Entrada[K]) => {
     // Si cambia la tasa o la periodicidad, la advertencia que el usuario aceptó
@@ -185,31 +189,29 @@ export function NuevoPrestamo() {
   const pasos = ['A quién', 'Cuánto', 'Condiciones', 'Revisa']
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-2xl font-bold">Registrar un préstamo</h1>
-
-      <ol className="flex gap-2 text-sm" aria-label="Pasos">
+    <Pantalla
+      titulo="Nuevo préstamo"
+      atras="/"
+      textoAtras="Cancelar"
+      subtitulo={`Paso ${paso} de 4 · ${pasos[paso - 1]}`}
+    >
+      <div className="space-y-5">
+      <ol className="grid grid-cols-4 gap-1.5" aria-label="Pasos">
         {pasos.map((t, i) => (
-          <li
-            key={t}
-            className={`flex-1 rounded-lg px-3 py-2 text-center ${
-              i + 1 === paso ? 'bg-marca-600 text-white font-semibold'
-              : i + 1 < paso ? 'bg-marca-50 text-marca-700' : 'bg-slate-100 text-slate-500'
-            }`}
-            aria-current={i + 1 === paso ? 'step' : undefined}
-          >
-            {i + 1}. {t}
+          <li key={t} aria-current={i + 1 === paso ? 'step' : undefined}>
+            <span className="sr-only">{i + 1}. {t}</span>
+            <span className={`block h-1.5 rounded-full transition-colors duration-300 ${i + 1 <= paso ? 'bg-marca' : 'bg-superficie-2'}`} />
           </li>
         ))}
       </ol>
 
-      <div className="tarjeta space-y-4">
+      <div key={paso} className="tarjeta animate-entrada space-y-5 p-5">
         {paso === 1 && (
           <>
             <div>
               <label className="etiqueta" htmlFor="deudor">¿A quién le prestas?</label>
               <input
-                id="deudor" type="email" className="campo" value={d.emailDeudor}
+                id="deudor" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" className="campo" value={d.emailDeudor}
                 onChange={(e) => set('emailDeudor', e.target.value)} placeholder="correo@ejemplo.com"
               />
               <p className="ayuda">
@@ -232,7 +234,7 @@ export function NuevoPrestamo() {
             <div>
               <label className="etiqueta" htmlFor="monto">¿Cuánto le prestas?</label>
               <input
-                id="monto" className="campo text-lg" inputMode="numeric" value={numero(d.montoPrincipal)}
+                id="monto" className="campo cifra text-[28px] font-bold" inputMode="numeric" value={numero(d.montoPrincipal)}
                 onChange={(e) => set('montoPrincipal', aNumero(e.target.value))} placeholder="1.000.000"
               />
             </div>
@@ -251,7 +253,7 @@ export function NuevoPrestamo() {
                   value={d.tasaCorrienteMensualPct}
                   onChange={(e) => set('tasaCorrienteMensualPct', Number(e.target.value))}
                 />
-                <span className="text-slate-600">% al mes</span>
+                <span className="text-texto-2">% al mes</span>
               </div>
               <p className="ayuda">
                 Equivale a{' '}
@@ -280,7 +282,7 @@ export function NuevoPrestamo() {
           <>
             <fieldset>
               <legend className="etiqueta">¿Cómo se define el pago?</legend>
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid gap-2">
                 {([
                   ['CUOTA_FIJA', 'Cuota fija', 'Defines la cuota; el plazo sale solo'],
                   ['PLAZO_FIJO', 'Plazo fijo', 'Defines cuántas cuotas'],
@@ -288,8 +290,8 @@ export function NuevoPrestamo() {
                 ] as const).map(([valor, titulo, ayuda]) => (
                   <label
                     key={valor}
-                    className={`cursor-pointer rounded-lg border p-3 text-sm ${
-                      d.modoCalculo === valor ? 'border-marca-500 bg-marca-50' : 'border-slate-300'
+                    className={`block cursor-pointer rounded-2xl p-3.5 text-[15px] transition active:scale-[0.98] ${
+                      d.modoCalculo === valor ? 'bg-texto text-fondo' : 'bg-superficie-2'
                     }`}
                   >
                     <input
@@ -297,7 +299,7 @@ export function NuevoPrestamo() {
                       onChange={() => set('modoCalculo', valor)}
                     />
                     <span className="block font-semibold">{titulo}</span>
-                    <span className="text-xs text-slate-500">{ayuda}</span>
+                    <span className="text-[13px] opacity-70">{ayuda}</span>
                   </label>
                 ))}
               </div>
@@ -338,7 +340,7 @@ export function NuevoPrestamo() {
             {/* Decisión consciente: no hay valor preseleccionado */}
             <fieldset>
               <legend className="etiqueta">Si se atrasa, ¿cobras mora?</legend>
-              <div className="grid gap-2 sm:grid-cols-3">
+              <div className="grid gap-2">
                 {([
                   ['SIN_MORA', 'No cobro mora', 'Entre conocidos es una opción válida'],
                   ['PERSONALIZADA', 'Una tasa que yo elijo', 'Tú defines cuánto'],
@@ -346,8 +348,8 @@ export function NuevoPrestamo() {
                 ] as const).map(([valor, titulo, ayuda]) => (
                   <label
                     key={valor}
-                    className={`cursor-pointer rounded-lg border p-3 text-sm ${
-                      d.modoMora === valor ? 'border-marca-500 bg-marca-50' : 'border-slate-300'
+                    className={`block cursor-pointer rounded-2xl p-3.5 text-[15px] transition active:scale-[0.98] ${
+                      d.modoMora === valor ? 'bg-texto text-fondo' : 'bg-superficie-2'
                     }`}
                   >
                     <input
@@ -355,7 +357,7 @@ export function NuevoPrestamo() {
                       onChange={() => set('modoMora', valor)}
                     />
                     <span className="block font-semibold">{titulo}</span>
-                    <span className="text-xs text-slate-500">{ayuda}</span>
+                    <span className="text-[13px] opacity-70">{ayuda}</span>
                   </label>
                 ))}
               </div>
@@ -403,9 +405,9 @@ export function NuevoPrestamo() {
               </div>
             </div>
 
-            <label className="flex items-start gap-2 text-sm">
+            <label className="flex items-start gap-3 rounded-2xl bg-superficie-2 p-3.5 text-[14px] leading-snug">
               <input
-                type="checkbox" className="mt-1" checked={d.correrADiaHabil}
+                type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--c-marca-solido))]" checked={d.correrADiaHabil}
                 onChange={(e) => set('correrADiaHabil', e.target.checked)}
               />
               <span>
@@ -414,9 +416,9 @@ export function NuevoPrestamo() {
               </span>
             </label>
 
-            <label className="flex items-start gap-2 text-sm">
+            <label className="flex items-start gap-3 rounded-2xl bg-superficie-2 p-3.5 text-[14px] leading-snug">
               <input
-                type="checkbox" className="mt-1" checked={d.autoConfirmarPagosDelPrestamista}
+                type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--c-marca-solido))]" checked={d.autoConfirmarPagosDelPrestamista}
                 onChange={(e) => set('autoConfirmarPagosDelPrestamista', e.target.checked)}
               />
               <span>
@@ -432,10 +434,10 @@ export function NuevoPrestamo() {
         {paso === 4 && (
           <>
             {error && <Aviso tipo="error">{error}</Aviso>}
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div><p className="text-sm text-slate-500">Le prestas a</p><p className="font-semibold">{d.emailDeudor}</p></div>
-              <div><p className="text-sm text-slate-500">Monto</p><p className="font-semibold">{pesos(d.montoPrincipal)}</p></div>
-              <div><p className="text-sm text-slate-500">Interés</p><p className="font-semibold">{d.tasaCorrienteMensualPct}% mensual</p></div>
+            <div className="grid grid-cols-1 gap-3">
+              <div><p className="text-sm text-texto-2">Le prestas a</p><p className="font-semibold">{d.emailDeudor}</p></div>
+              <div><p className="text-sm text-texto-2">Monto</p><p className="font-semibold">{pesos(d.montoPrincipal)}</p></div>
+              <div><p className="text-sm text-texto-2">Interés</p><p className="font-semibold">{d.tasaCorrienteMensualPct}% mensual</p></div>
             </div>
 
             {planValido && (
@@ -446,11 +448,11 @@ export function NuevoPrestamo() {
                   <strong>{planValido.periodosHastaLiquidar ?? '—'} cuotas</strong>. En total
                   entregaría {pesos(d.montoPrincipal + planValido.totalIntereses)}.
                 </Aviso>
-                <details className="rounded-lg border border-slate-200">
-                  <summary className="cursor-pointer px-4 py-3 font-medium">
+                <details className="rounded-2xl bg-superficie-2">
+                  <summary className="cursor-pointer px-4 py-3.5 font-semibold text-marca">
                     Ver el desglose cuota por cuota
                   </summary>
-                  <div className="border-t border-slate-200 p-4">
+                  <div className="p-3">
                     <TablaDesglose filas={planValido.filas.slice(0, 24)} />
                   </div>
                 </details>
@@ -463,7 +465,7 @@ export function NuevoPrestamo() {
                 <p className="whitespace-pre-line">{textoAdvertencia ?? TEXTO_ADVERTENCIA_GENERICO}</p>
                 <label className="mt-3 flex items-start gap-2 font-medium">
                   <input
-                    type="checkbox" className="mt-1" checked={aceptaUsura}
+                    type="checkbox" className="mt-0.5 h-5 w-5 shrink-0 accent-[rgb(var(--c-marca-solido))]" checked={aceptaUsura}
                     onChange={(e) => setAceptaUsura(e.target.checked)}
                   />
                   <span>
@@ -481,7 +483,9 @@ export function NuevoPrestamo() {
         )}
       </div>
 
-      <div className="flex justify-between">
+      {createPortal(
+      <div className="vidrio fixed inset-x-0 bottom-0 z-30 border-t border-separador/70 px-4 pb-[calc(env(safe-area-inset-bottom)+12px)] pt-3">
+      <div className="mx-auto grid max-w-2xl grid-cols-[auto_1fr] gap-3">
         <button
           className="btn-secundario" onClick={() => setPaso((p) => Math.max(1, p - 1))}
           disabled={paso === 1}
@@ -490,7 +494,7 @@ export function NuevoPrestamo() {
         </button>
         {paso < 4 ? (
           <button
-            className="btn-primario" onClick={() => setPaso((p) => p + 1)}
+            className="btn-primario w-full" onClick={() => setPaso((p) => p + 1)}
             disabled={
               (paso === 1 && !d.emailDeudor.includes('@')) ||
               (paso === 2 && d.montoPrincipal <= 0) ||
@@ -501,7 +505,7 @@ export function NuevoPrestamo() {
           </button>
         ) : (
           <button
-            className="btn-primario" onClick={() => void enviar()}
+            className="btn-primario w-full" onClick={() => void enviar()}
             disabled={
               confirmacion !== 'CREAR' ||
               crear.isPending ||
@@ -512,6 +516,10 @@ export function NuevoPrestamo() {
           </button>
         )}
       </div>
-    </div>
+      </div>,
+        document.body,
+      )}
+      </div>
+    </Pantalla>
   )
 }

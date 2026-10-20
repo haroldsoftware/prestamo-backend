@@ -1,9 +1,10 @@
 # Cabeceras que Cloudflare Pages aplica a todas las respuestas.
 
 /*
-  # El backend vive en otro dominio: connect-src debe permitirlo explícitamente.
-  # Ajusta la URL de Cloud Run cuando la tengas.
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://*.run.app https://*.amazonaws.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  # La API se sirve desde este mismo dominio (functions/api/[[ruta]].js la
+  # reenvía a Cloud Run), así que connect-src 'self' basta. amazonaws.com queda
+  # para subir comprobantes directo a S3 con URL firmada.
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://*.amazonaws.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
@@ -17,3 +18,11 @@
 # El HTML nunca se cachea, o un despliegue nuevo no llegaría a quien ya entró.
 /index.html
   Cache-Control: public, max-age=0, must-revalidate
+
+# El service worker tampoco: si el navegador lo guarda, nunca ve la versión nueva.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+  Cache-Control: public, max-age=3600

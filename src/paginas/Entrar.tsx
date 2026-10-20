@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ErrorApi } from '../api/cliente'
 import { useSesion } from '../hooks/sesion'
 import { Aviso } from '../componentes/base'
+import { MarcoAuth } from '../componentes/MarcoAuth'
 
 export function Entrar() {
   const { entrar } = useSesion()
@@ -30,17 +31,14 @@ export function Entrar() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-16">
-      <h1 className="text-2xl font-bold">Entra a tu cuenta</h1>
-      <p className="mt-1 text-slate-600">Lleva la cuenta de lo que prestas y lo que debes.</p>
-
-      <form onSubmit={enviar} className="tarjeta mt-6 space-y-4">
+    <MarcoAuth titulo="Entra a tu cuenta" subtitulo="Lleva la cuenta de lo que prestas y lo que debes.">
+      <form onSubmit={enviar} className="tarjeta space-y-4 p-5">
         {error && <Aviso tipo="error">{error}</Aviso>}
         <div>
           <label className="etiqueta" htmlFor="email">Correo</label>
           <input
-            id="email" type="email" className="campo" value={email} required autoComplete="email"
-            onChange={(e) => setEmail(e.target.value)}
+            id="email" type="email" inputMode="email" autoCapitalize="none" className="campo" value={email} required
+            autoComplete="email" onChange={(e) => setEmail(e.target.value)}
           />
         </div>
         <div>
@@ -53,11 +51,11 @@ export function Entrar() {
         <button className="btn-primario w-full" disabled={enviando}>
           {enviando ? 'Entrando…' : 'Entrar'}
         </button>
-        <div className="flex justify-between text-sm">
-          <Link className="text-marca-700 hover:underline" to="/recuperar">Olvidé mi contraseña</Link>
-          <Link className="text-marca-700 hover:underline" to="/registro">Crear cuenta</Link>
-        </div>
+        <Link className="enlace block text-center text-[15px]" to="/recuperar">Olvidé mi contraseña</Link>
       </form>
-    </div>
+      <p className="mt-6 text-center text-[15px] text-texto-2">
+        ¿Primera vez? <Link className="enlace" to="/registro">Crea tu cuenta</Link>
+      </p>
+    </MarcoAuth>
   )
 }

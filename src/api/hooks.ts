@@ -67,7 +67,13 @@ export function usePlan(id: string, habilitado = true) {
 export function usePagos(id: string) {
   return useQuery({
     queryKey: claves.pagos(id),
-    queryFn: async () => (await api<{ pagos: Pago[] }>(`/loans/${id}/payments`)).pagos,
+    queryFn: async () => {
+      const { pagos } = await api<{ pagos: Array<Pago & { _id?: string }> }>(`/loans/${id}/payments`)
+      // El backend debe mandar `id`; versiones anteriores mandaban solo `_id` de
+      // Mongo, y sin id los botones de confirmar/rechazar llamaban a
+      // /payments/undefined. Se normaliza para no depender del orden de despliegue.
+      return pagos.map(({ _id, ...p }) => ({ ...p, id: p.id ?? _id ?? '' }))
+    },
     enabled: Boolean(id),
   })
 }

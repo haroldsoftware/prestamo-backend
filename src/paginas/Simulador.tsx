@@ -7,12 +7,13 @@
  * como una hoja de cálculo y no como un formulario.
  */
 import { useCallback, useMemo, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import {
   compararEscenarios, proyectar, tasaDesdePorcentaje, type Condiciones as CondicionesMotor,
 } from '@core'
 import { usePrestamo } from '../api/hooks'
-import { Aviso, Cargando } from '../componentes/base'
+import { Aviso, EsqueletoPantalla } from '../componentes/base'
+import { Pantalla } from '../componentes/Pantalla'
 import { TablaDesglose } from '../componentes/TablaDesglose'
 import { pesos } from '../lib/formato'
 
@@ -68,36 +69,33 @@ export function Simulador() {
     [p, original],
   )
 
-  if (isLoading || !p || !original || !escenario) return <Cargando />
+  if (isLoading || !p || !original || !escenario) {
+    return <Pantalla titulo="¿Qué pasa si…?" atras={`/prestamos/${id}`} textoAtras="Préstamo"><EsqueletoPantalla /></Pantalla>
+  }
 
   const hayCambios = Object.keys(pagos).length > 0
 
   return (
+    <Pantalla
+      titulo="¿Qué pasa si…?"
+      atras={`/prestamos/${id}`}
+      textoAtras="Préstamo"
+      subtitulo="Cambia lo que pagarías en cualquier mes y mira cómo se mueve todo. No toca nada real."
+    >
     <div className="space-y-5">
-      <div>
-        <Link className="text-sm text-slate-500 hover:underline" to={`/prestamos/${id}`}>
-          ← Volver al préstamo
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold">¿Qué pasa si…?</h1>
-        <p className="text-slate-600">
-          Cambia lo que pagarías en cualquier mes y mira cómo se mueve todo. Esto no toca nada
-          real: es solo para ver.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button className="btn-secundario" onClick={() => aplicar('nada')}>No pago este mes</button>
-        <button className="btn-secundario" onClick={() => aplicar('doble')}>Pago doble</button>
-        <button className="btn-secundario" onClick={() => aplicar('prima')}>Abono la prima</button>
+      <div className="sin-barra -mx-4 flex gap-2 overflow-x-auto px-4">
+        <button className="btn-secundario btn-chico shrink-0 bg-superficie" onClick={() => aplicar('nada')}>No pago este mes</button>
+        <button className="btn-secundario btn-chico shrink-0 bg-superficie" onClick={() => aplicar('doble')}>Pago doble</button>
+        <button className="btn-secundario btn-chico shrink-0 bg-superficie" onClick={() => aplicar('prima')}>Abono la prima</button>
         {hayCambios && (
-          <button className="btn-secundario" onClick={() => aplicar('limpiar')}>Empezar de nuevo</button>
+          <button className="btn-tonal btn-chico shrink-0" onClick={() => aplicar('limpiar')}>Empezar de nuevo</button>
         )}
       </div>
 
       {hayCambios && comparacion && (
-        <div className="tarjeta sticky top-2 z-10 border-marca-300 bg-marca-50/80 backdrop-blur">
-          <h2 className="font-semibold">Comparado con el plan original</h2>
-          <div className="mt-3 grid gap-4 sm:grid-cols-3">
+        <div className="hero sticky z-10 rounded-4xl p-4 text-white" style={{ top: 'calc(env(safe-area-inset-top) + 56px)' }}>
+          <h2 className="micro text-white/75">Comparado con el plan original</h2>
+          <div className="mt-3 grid grid-cols-3 gap-3">
             <Comparado
               etiqueta="Cuotas"
               valor={comparacion.periodosAhorrados}
@@ -105,16 +103,16 @@ export function Simulador() {
               sufijo={Math.abs(comparacion.periodosAhorrados) === 1 ? 'cuota' : 'cuotas'}
             />
             <div>
-              <p className="text-sm text-slate-600">Intereses</p>
-              <p className={`text-xl font-bold tabular-nums ${comparacion.interesesAhorrados > 0 ? 'text-emerald-700' : comparacion.interesesAhorrados < 0 ? 'text-red-700' : ''}`}>
+              <p className="text-[12px] text-white/75">Intereses</p>
+              <p className={`cifra text-[16px] font-bold leading-tight ${comparacion.interesesAhorrados > 0 ? 'text-[#a7f3d0]' : comparacion.interesesAhorrados < 0 ? 'text-[#fecaca]' : ''}`}>
                 {comparacion.interesesAhorrados > 0 ? 'Ahorras ' : comparacion.interesesAhorrados < 0 ? 'Pagas ' : ''}
                 {pesos(Math.abs(comparacion.interesesAhorrados))}
                 {comparacion.interesesAhorrados < 0 ? ' más' : ''}
               </p>
             </div>
             <div>
-              <p className="text-sm text-slate-600">Terminarías</p>
-              <p className="text-xl font-bold">
+              <p className="text-[12px] text-white/75">Terminarías</p>
+              <p className="text-[16px] font-bold leading-tight capitalize">
                 {escenario.fechaLiquidacion
                   ? new Date(`${escenario.fechaLiquidacion}T12:00:00Z`).toLocaleDateString('es-CO', {
                       month: 'long', year: 'numeric',
@@ -133,7 +131,7 @@ export function Simulador() {
         </Aviso>
       )}
 
-      <div className="tarjeta">
+      <div>
         <TablaDesglose
           filas={escenario.filas}
           editable
@@ -142,6 +140,7 @@ export function Simulador() {
         />
       </div>
     </div>
+    </Pantalla>
   )
 }
 
@@ -152,8 +151,8 @@ function Comparado({
 }) {
   return (
     <div>
-      <p className="text-sm text-slate-600">{etiqueta}</p>
-      <p className={`text-xl font-bold tabular-nums ${valor === 0 ? '' : bueno ? 'text-emerald-700' : 'text-red-700'}`}>
+      <p className="text-[12px] text-white/75">{etiqueta}</p>
+      <p className={`text-[16px] font-bold leading-tight ${valor === 0 ? '' : bueno ? 'text-[#a7f3d0]' : 'text-[#fecaca]'}`}>
         {valor === 0 ? 'Igual' : `${valor > 0 ? '−' : '+'}${Math.abs(valor)} ${sufijo}`}
       </p>
     </div>

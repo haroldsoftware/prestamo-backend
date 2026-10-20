@@ -101,9 +101,27 @@ export async function renovarToken(): Promise<boolean> {
   }
 }
 
-/** Descarga un archivo generado por la API (PDF, Excel). */
+/**
+ * Descarga un archivo generado por la API (PDF, Excel).
+ *
+ * En el iPhone, sobre todo con la app instalada, un <a download> no tiene a
+ * dónde ir: se usa la hoja nativa de Compartir (guardar en Archivos, enviar
+ * por WhatsApp, etc.). En el resto, descarga normal.
+ */
 export async function descargar(ruta: string, nombre: string): Promise<void> {
   const blob = await api<Blob>(ruta)
+  const archivo = new File([blob], nombre, { type: blob.type || 'application/octet-stream' })
+  const nav = navigator as Navigator & { canShare?(d: ShareData): boolean }
+  const tactil = window.matchMedia('(pointer: coarse)').matches
+  if (tactil && nav.share && nav.canShare?.({ files: [archivo] })) {
+    try {
+      await nav.share({ files: [archivo], title: nombre })
+      return
+    } catch (e) {
+      // Cancelar la hoja de compartir no es un error.
+      if ((e as Error).name === 'AbortError') return
+    }
+  }
   const url = URL.createObjectURL(blob)
   const enlace = document.createElement('a')
   enlace.href = url
@@ -111,5 +129,5 @@ export async function descargar(ruta: string, nombre: string): Promise<void> {
   document.body.appendChild(enlace)
   enlace.click()
   enlace.remove()
-  URL.revokeObjectURL(url)
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

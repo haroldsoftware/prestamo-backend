@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ErrorApi } from '../api/cliente'
 import { Aviso } from '../componentes/base'
+import { IconoCorreo } from '../componentes/Iconos'
+import { MarcoAuth } from '../componentes/MarcoAuth'
 
 export function Registro() {
   const [datos, setDatos] = useState({ nombreCompleto: '', email: '', password: '' })
@@ -23,23 +25,24 @@ export function Registro() {
 
   if (estado === 'listo') {
     return (
-      <div className="mx-auto max-w-md px-4 py-16">
-        <div className="tarjeta">
-          <h1 className="text-xl font-bold">Revisa tu correo</h1>
-          <p className="mt-2 text-slate-600">
-            Si <strong>{datos.email}</strong> estaba disponible, te enviamos un enlace para
-            confirmarlo. El enlace vence en 48 horas.
+      <MarcoAuth titulo="Revisa tu correo">
+        <div className="tarjeta p-5 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-marca-suave text-marca">
+            <IconoCorreo tam={30} />
+          </div>
+          <p className="mt-4 text-[15px] text-texto-2">
+            Si <strong className="text-texto">{datos.email}</strong> estaba disponible, te enviamos un
+            enlace para confirmarlo. Vence en 48 horas.
           </p>
           <Link className="btn-primario mt-5 w-full" to="/entrar">Ir a entrar</Link>
         </div>
-      </div>
+      </MarcoAuth>
     )
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-16">
-      <h1 className="text-2xl font-bold">Crea tu cuenta</h1>
-      <form onSubmit={enviar} className="tarjeta mt-6 space-y-4">
+    <MarcoAuth titulo="Crea tu cuenta" subtitulo="Es gratis y toma un minuto.">
+      <form onSubmit={enviar} className="tarjeta space-y-4 p-5">
         {error && <Aviso tipo="error">{error}</Aviso>}
         <div>
           <label className="etiqueta" htmlFor="nombre">Tu nombre completo</label>
@@ -53,7 +56,7 @@ export function Registro() {
         <div>
           <label className="etiqueta" htmlFor="email">Correo</label>
           <input
-            id="email" type="email" className="campo" required autoComplete="email"
+            id="email" type="email" inputMode="email" autoCapitalize="none" className="campo" required autoComplete="email"
             value={datos.email} onChange={(e) => setDatos({ ...datos, email: e.target.value })}
           />
         </div>
@@ -69,10 +72,10 @@ export function Registro() {
         <button className="btn-primario w-full" disabled={estado === 'enviando'}>
           {estado === 'enviando' ? 'Creando…' : 'Crear cuenta'}
         </button>
-        <p className="text-center text-sm">
-          ¿Ya tienes cuenta? <Link className="text-marca-700 hover:underline" to="/entrar">Entra</Link>
-        </p>
       </form>
-    </div>
+      <p className="mt-6 text-center text-[15px] text-texto-2">
+        ¿Ya tienes cuenta? <Link className="enlace" to="/entrar">Entra</Link>
+      </p>
+    </MarcoAuth>
   )
 }

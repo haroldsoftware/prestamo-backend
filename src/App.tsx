@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import type { ReactElement } from 'react'
 import { Layout } from './componentes/Layout'
 import { Cargando } from './componentes/base'
+import { Cuenta } from './paginas/Cuenta'
 import { useSesion } from './hooks/sesion'
 import { DetallePrestamo } from './paginas/DetallePrestamo'
 import { Entrar } from './paginas/Entrar'
@@ -42,6 +43,7 @@ export function App() {
         <Route path="prestamos/:id" element={<DetallePrestamo />} />
         <Route path="prestamos/:id/simular" element={<Simulador />} />
         <Route path="pagos" element={<PagosPendientes />} />
+        <Route path="cuenta" element={<Cuenta />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

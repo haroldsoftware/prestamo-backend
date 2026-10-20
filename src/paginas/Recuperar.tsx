@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { api, ErrorApi } from '../api/cliente'
 import { Aviso } from '../componentes/base'
+import { MarcoAuth } from '../componentes/MarcoAuth'
 
 export function Recuperar() {
   const [email, setEmail] = useState('')
@@ -14,31 +15,30 @@ export function Recuperar() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-16">
-      <h1 className="text-2xl font-bold">Recupera tu contraseña</h1>
+    <MarcoAuth titulo="Recupera tu contraseña" subtitulo="Te enviamos un enlace para crear una nueva.">
       {listo ? (
-        <div className="tarjeta mt-6">
+        <div className="tarjeta space-y-4 p-5">
           <Aviso tipo="exito">
             Si ese correo tiene una cuenta, te enviamos instrucciones. El enlace vence en una hora.
           </Aviso>
           <Link className="btn-secundario mt-4 w-full" to="/entrar">Volver</Link>
         </div>
       ) : (
-        <form onSubmit={enviar} className="tarjeta mt-6 space-y-4">
+        <form onSubmit={enviar} className="tarjeta space-y-4 p-5">
           <div>
             <label className="etiqueta" htmlFor="email">Tu correo</label>
             <input
-              id="email" type="email" className="campo" required autoComplete="email"
+              id="email" type="email" inputMode="email" autoCapitalize="none" className="campo" required autoComplete="email"
               value={email} onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           <button className="btn-primario w-full">Enviar instrucciones</button>
           <p className="text-center text-sm">
-            <Link className="text-marca-700 hover:underline" to="/entrar">Volver a entrar</Link>
+            <Link className="enlace" to="/entrar">Volver a entrar</Link>
           </p>
         </form>
       )}
-    </div>
+    </MarcoAuth>
   )
 }
 
@@ -61,9 +61,8 @@ export function Restablecer() {
   }
 
   return (
-    <div className="mx-auto max-w-md px-4 py-16">
-      <h1 className="text-2xl font-bold">Crea una contraseña nueva</h1>
-      <form onSubmit={enviar} className="tarjeta mt-6 space-y-4">
+    <MarcoAuth titulo="Crea una contraseña nueva">
+      <form onSubmit={enviar} className="tarjeta space-y-4 p-5">
         {error && <Aviso tipo="error">{error}</Aviso>}
         <div>
           <label className="etiqueta" htmlFor="password">Contraseña nueva</label>
@@ -77,7 +76,7 @@ export function Restablecer() {
         </div>
         <button className="btn-primario w-full">Cambiar contraseña</button>
       </form>
-    </div>
+    </MarcoAuth>
   )
 }
 
@@ -94,24 +93,24 @@ export function VerificarEmail() {
   })
 
   return (
-    <div className="mx-auto max-w-md px-4 py-16">
-      <div className="tarjeta text-center">
+    <MarcoAuth titulo="Confirmación de correo">
+      <div className="tarjeta p-5 text-center">
         {estado === 'verificando' && <p>Confirmando tu correo…</p>}
         {estado === 'ok' && (
           <>
-            <h1 className="text-xl font-bold text-emerald-700">Correo confirmado</h1>
-            <p className="mt-2 text-slate-600">Ya puedes aceptar préstamos y registrar pagos.</p>
+            <h1 className="text-xl font-bold text-exito">Correo confirmado</h1>
+            <p className="mt-2 text-texto-2">Ya puedes aceptar préstamos y registrar pagos.</p>
             <Link className="btn-primario mt-5 w-full" to="/entrar">Entrar</Link>
           </>
         )}
         {estado === 'error' && (
           <>
-            <h1 className="text-xl font-bold text-red-700">El enlace no sirve</h1>
-            <p className="mt-2 text-slate-600">Puede que ya lo hayas usado o que haya vencido.</p>
+            <h1 className="text-xl font-bold text-peligro">El enlace no sirve</h1>
+            <p className="mt-2 text-texto-2">Puede que ya lo hayas usado o que haya vencido.</p>
             <Link className="btn-secundario mt-5 w-full" to="/entrar">Volver</Link>
           </>
         )}
       </div>
-    </div>
+    </MarcoAuth>
   )
 }
