@@ -1,15 +1,10 @@
 import { Link } from 'react-router-dom'
 import type { ResumenPrestamo } from '../api/tipos'
 import { pesos } from '../lib/formato'
+import { subtitulo } from '../lib/vocabulario'
 import { Avatar, Insignia, Progreso } from './base'
 import { IconoChevron } from './Iconos'
 
-export const ROL_TEXTO: Record<string, string> = {
-  PRESTAMISTA: 'Le prestaste',
-  DEUDOR: 'Te prestó',
-  CODEUDOR: 'Eres codeudor',
-  OBSERVADOR: 'Observas',
-}
 
 /** Qué tanto se ha pagado del capital: la barra que da tranquilidad. */
 export function avance(p: Pick<ResumenPrestamo, 'estado' | 'montoPrincipal' | 'saldo'>): number {
@@ -30,8 +25,7 @@ export function TarjetaPrestamo({ p }: { p: ResumenPrestamo }) {
             <p className="truncate text-[16px] font-semibold">{p.contraparte.nombre}</p>
           </div>
           <p className="truncate text-[13px] text-texto-2">
-            {ROL_TEXTO[p.rol ?? ''] ?? 'Préstamo'}
-            {p.descripcion ? ` · ${p.descripcion}` : ''}
+            {subtitulo(p)}
           </p>
         </div>
         <div className="text-right">

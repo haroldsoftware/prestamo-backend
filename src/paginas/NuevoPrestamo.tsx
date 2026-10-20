@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   evaluarUsura, periodosPorAnio, proyectar, tasaADecimal, tasaDesdeDecimal, tasaDesdePorcentaje,
   type Condiciones as CondicionesMotor,
@@ -19,6 +19,8 @@ import { TablaDesglose } from '../componentes/TablaDesglose'
 import { aNumero, hoyISO, numero, pesos, porcentaje } from '../lib/formato'
 
 type Entrada = {
+  tipo: 'PRESTAMO' | 'VENTA_CUOTAS'
+  concepto: string
   emailDeudor: string
   descripcion: string
   montoPrincipal: number
@@ -39,6 +41,7 @@ type Entrada = {
 }
 
 const INICIAL: Entrada = {
+  tipo: 'PRESTAMO', concepto: '',
   emailDeudor: '', descripcion: '', montoPrincipal: 0, fechaDesembolso: hoyISO(),
   tasaCorrienteMensualPct: 2, modoMora: 'SIN_MORA', tasaMoraMensualPct: 3,
   modoCalculo: 'CUOTA_FIJA', periodicidad: 'MENSUAL', diaCorte: 30,
@@ -57,7 +60,12 @@ const TEXTO_ADVERTENCIA_GENERICO =
 
 export function NuevoPrestamo() {
   const [paso, setPaso] = useState(1)
-  const [d, setD] = useState<Entrada>(INICIAL)
+  const [params] = useSearchParams()
+  const [d, setD] = useState<Entrada>(() => ({ ...INICIAL, tipo: params.get('tipo') === 'venta' ? 'VENTA_CUOTAS' : 'PRESTAMO' }))
+  // Una venta a cuotas no lleva interés ni mora: se ignoran esos campos.
+  const venta = d.tipo === 'VENTA_CUOTAS'
+  const tasaPct = venta ? 0 : d.tasaCorrienteMensualPct
+  const modoMora: Entrada['modoMora'] = venta ? 'SIN_MORA' : d.modoMora
   const [confirmacion, setConfirmacion] = useState('')
   const [aceptaUsura, setAceptaUsura] = useState(false)
   const [servidorExigeUsura, setServidorExigeUsura] = useState(false)
@@ -80,9 +88,9 @@ export function NuevoPrestamo() {
     return {
       montoPrincipal: d.montoPrincipal,
       fechaDesembolso: d.fechaDesembolso,
-      tasaCorriente: tasaDesdePorcentaje(d.tasaCorrienteMensualPct),
-      tasaMora: d.modoMora === 'SIN_MORA' ? 0 : tasaDesdePorcentaje(d.tasaMoraMensualPct),
-      modoMora: d.modoMora,
+      tasaCorriente: tasaDesdePorcentaje(tasaPct),
+      tasaMora: modoMora === 'SIN_MORA' ? 0 : tasaDesdePorcentaje(d.tasaMoraMensualPct),
+      modoMora,
       modoCalculo: d.modoCalculo,
       periodicidad: d.periodicidad,
       diaCorte: d.diaCorte,
@@ -113,13 +121,13 @@ export function NuevoPrestamo() {
   // explícita (400 requiereAceptacionUsura). Se evalúa aquí para que el usuario
   // lo vea ANTES de darle a crear, no después de un error.
   const evalUsura = useMemo(() => {
-    if (!usura) return null
+    if (!usura || venta) return null
     return evaluarUsura(
       tasaDesdePorcentaje(d.tasaCorrienteMensualPct),
       periodosPorAnio(d.periodicidad),
       tasaDesdeDecimal(usura.usuraEA),
     )
-  }, [usura, d.tasaCorrienteMensualPct, d.periodicidad])
+  }, [usura, venta, d.tasaCorrienteMensualPct, d.periodicidad])
 
   const excedeUsura = Boolean(evalUsura?.excede)
 
@@ -150,14 +158,16 @@ export function NuevoPrestamo() {
     setError('')
     try {
       const creado = await crear.mutateAsync({
+        tipo: d.tipo,
+        concepto: venta ? d.concepto.trim() : undefined,
         emailDeudor: d.emailDeudor,
         descripcion: d.descripcion || undefined,
         condiciones: {
           montoPrincipal: d.montoPrincipal,
           fechaDesembolso: d.fechaDesembolso,
-          tasaCorrienteMensualPct: d.tasaCorrienteMensualPct,
-          modoMora: d.modoMora,
-          tasaMoraMensualPct: d.modoMora === 'PERSONALIZADA' ? d.tasaMoraMensualPct : undefined,
+          tasaCorrienteMensualPct: tasaPct,
+          modoMora,
+          tasaMoraMensualPct: modoMora === 'PERSONALIZADA' ? d.tasaMoraMensualPct : undefined,
           modoCalculo: d.modoCalculo,
           periodicidad: d.periodicidad,
           diaCorte: d.diaCorte,
@@ -190,7 +200,7 @@ export function NuevoPrestamo() {
 
   return (
     <Pantalla
-      titulo="Nuevo préstamo"
+      titulo={venta ? 'Nueva venta a cuotas' : 'Nuevo préstamo'}
       atras="/"
       textoAtras="Cancelar"
       subtitulo={`Paso ${paso} de 4 · ${pasos[paso - 1]}`}
@@ -208,43 +218,79 @@ export function NuevoPrestamo() {
       <div key={paso} className="tarjeta animate-entrada space-y-5 p-5">
         {paso === 1 && (
           <>
+            <fieldset>
+              <legend className="etiqueta">¿Qué quieres registrar?</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ['PRESTAMO', 'Un préstamo', 'Le prestas plata a alguien'],
+                  ['VENTA_CUOTAS', 'Una venta a cuotas', 'Vendiste algo y te lo pagan por partes'],
+                ] as const).map(([valor, titulo, ayuda]) => (
+                  <label
+                    key={valor}
+                    className={`block cursor-pointer rounded-2xl p-3.5 text-[15px] transition active:scale-[0.98] ${
+                      d.tipo === valor ? 'bg-texto text-fondo' : 'bg-superficie-2'
+                    }`}
+                  >
+                    <input type="radio" name="tipo" className="sr-only" checked={d.tipo === valor} onChange={() => set('tipo', valor)} />
+                    <span className="block font-semibold">{titulo}</span>
+                    <span className="text-[13px] opacity-70">{ayuda}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <div>
-              <label className="etiqueta" htmlFor="deudor">¿A quién le prestas?</label>
+              <label className="etiqueta" htmlFor="deudor">{venta ? '¿A quién le vendes?' : '¿A quién le prestas?'}</label>
               <input
                 id="deudor" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" className="campo" value={d.emailDeudor}
                 onChange={(e) => set('emailDeudor', e.target.value)} placeholder="correo@ejemplo.com"
               />
               <p className="ayuda">
                 Le enviaremos la invitación a ese correo. Podrá ver las condiciones antes de
-                registrarse, y el préstamo solo empieza cuando la acepte.
+                registrarse, y {venta ? 'la venta' : 'el préstamo'} solo empieza cuando la acepte.
               </p>
             </div>
-            <div>
-              <label className="etiqueta" htmlFor="desc">¿Para qué es? (opcional)</label>
-              <input
-                id="desc" className="campo" value={d.descripcion}
-                onChange={(e) => set('descripcion', e.target.value)} placeholder="Arreglo del carro"
-              />
-            </div>
+            {venta ? (
+              <div>
+                <label className="etiqueta" htmlFor="concepto">¿Qué vendiste?</label>
+                <input
+                  id="concepto" className="campo" value={d.concepto} maxLength={200}
+                  onChange={(e) => set('concepto', e.target.value)} placeholder="Desarrollo de software"
+                />
+                <p className="ayuda">Así aparece en la constancia que acepta el comprador.</p>
+              </div>
+            ) : (
+              <div>
+                <label className="etiqueta" htmlFor="desc">¿Para qué es? (opcional)</label>
+                <input
+                  id="desc" className="campo" value={d.descripcion}
+                  onChange={(e) => set('descripcion', e.target.value)} placeholder="Arreglo del carro"
+                />
+              </div>
+            )}
           </>
         )}
 
         {paso === 2 && (
           <>
             <div>
-              <label className="etiqueta" htmlFor="monto">¿Cuánto le prestas?</label>
+              <label className="etiqueta" htmlFor="monto">{venta ? '¿Cuál es el valor total?' : '¿Cuánto le prestas?'}</label>
               <input
                 id="monto" className="campo cifra text-[28px] font-bold" inputMode="numeric" value={numero(d.montoPrincipal)}
                 onChange={(e) => set('montoPrincipal', aNumero(e.target.value))} placeholder="1.000.000"
               />
             </div>
             <div>
-              <label className="etiqueta" htmlFor="fecha">¿Cuándo le entregas la plata?</label>
+              <label className="etiqueta" htmlFor="fecha">{venta ? '¿Fecha de la venta?' : '¿Cuándo le entregas la plata?'}</label>
               <input
                 id="fecha" type="date" className="campo" value={d.fechaDesembolso}
                 onChange={(e) => set('fechaDesembolso', e.target.value)}
               />
             </div>
+            {venta ? (
+              <p className="rounded-2xl bg-marca-suave px-4 py-3 text-[14px] text-texto">
+                <strong>Sin interés.</strong> Una venta a cuotas solo cobra el valor acordado, repartido en cuotas.
+              </p>
+            ) : (
             <div>
               <label className="etiqueta" htmlFor="tasa">Interés mensual</label>
               <div className="flex items-center gap-2">
@@ -275,6 +321,7 @@ export function NuevoPrestamo() {
                 </div>
               )}
             </div>
+            )}
           </>
         )}
 
@@ -337,6 +384,7 @@ export function NuevoPrestamo() {
               </div>
             )}
 
+            {!venta && (<>
             {/* Decisión consciente: no hay valor preseleccionado */}
             <fieldset>
               <legend className="etiqueta">Si se atrasa, ¿cobras mora?</legend>
@@ -374,6 +422,8 @@ export function NuevoPrestamo() {
                 <p className="ayuda">Solo corre sobre lo que quede vencido, y por días de atraso.</p>
               </div>
             )}
+
+            </>)}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
@@ -435,19 +485,28 @@ export function NuevoPrestamo() {
           <>
             {error && <Aviso tipo="error">{error}</Aviso>}
             <div className="grid grid-cols-1 gap-3">
-              <div><p className="text-sm text-texto-2">Le prestas a</p><p className="font-semibold">{d.emailDeudor}</p></div>
-              <div><p className="text-sm text-texto-2">Monto</p><p className="font-semibold">{pesos(d.montoPrincipal)}</p></div>
-              <div><p className="text-sm text-texto-2">Interés</p><p className="font-semibold">{d.tasaCorrienteMensualPct}% mensual</p></div>
+              <div><p className="text-sm text-texto-2">{venta ? 'Le vendes a' : 'Le prestas a'}</p><p className="font-semibold">{d.emailDeudor}</p></div>
+              {venta && <div><p className="text-sm text-texto-2">Qué vendiste</p><p className="font-semibold">{d.concepto}</p></div>}
+              <div><p className="text-sm text-texto-2">{venta ? 'Valor total' : 'Monto'}</p><p className="font-semibold">{pesos(d.montoPrincipal)}</p></div>
+              <div><p className="text-sm text-texto-2">Interés</p><p className="font-semibold">{venta ? 'Sin interés' : `${d.tasaCorrienteMensualPct}% mensual`}</p></div>
             </div>
 
             {planValido && (
               <>
+                {venta ? (
+                  <Aviso tipo="info">
+                    Pagaría <strong>{pesos(d.montoPrincipal)}</strong> en{' '}
+                    <strong>{planValido.periodosHastaLiquidar ?? '—'} cuotas</strong>
+                    {planValido.filas[0] ? <> de <strong>{pesos(planValido.filas[0].cuotaExigible)}</strong></> : null}, sin interés.
+                  </Aviso>
+                ) : (
                 <Aviso tipo="info">
                   Con estas condiciones pagaría <strong>{pesos(planValido.totalIntereses)}</strong> de
                   intereses en total, y terminaría en{' '}
                   <strong>{planValido.periodosHastaLiquidar ?? '—'} cuotas</strong>. En total
                   entregaría {pesos(d.montoPrincipal + planValido.totalIntereses)}.
                 </Aviso>
+                )}
                 <details className="rounded-2xl bg-superficie-2">
                   <summary className="cursor-pointer px-4 py-3.5 font-semibold text-marca">
                     Ver el desglose cuota por cuota
@@ -496,7 +555,7 @@ export function NuevoPrestamo() {
           <button
             className="btn-primario w-full" onClick={() => setPaso((p) => p + 1)}
             disabled={
-              (paso === 1 && !d.emailDeudor.includes('@')) ||
+              (paso === 1 && (!d.emailDeudor.includes('@') || (venta && d.concepto.trim().length < 2))) ||
               (paso === 2 && d.montoPrincipal <= 0) ||
               (paso === 3 && (Boolean(errorPlan) || (d.modoCalculo === 'CUOTA_FIJA' && !d.cuotaPactada)))
             }
@@ -512,7 +571,7 @@ export function NuevoPrestamo() {
               (pedirAceptacionUsura && !aceptaUsura)
             }
           >
-            {crear.isPending ? 'Registrando…' : 'Registrar préstamo'}
+            {crear.isPending ? 'Registrando…' : venta ? 'Registrar venta' : 'Registrar préstamo'}
           </button>
         )}
       </div>

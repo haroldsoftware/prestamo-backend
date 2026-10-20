@@ -12,6 +12,7 @@ import { Aviso, Cargando, Fila } from '../componentes/base'
 import { MarcoAuth } from '../componentes/MarcoAuth'
 import { TablaDesglose } from '../componentes/TablaDesglose'
 import { fechaLarga, pesos, porcentaje } from '../lib/formato'
+import { esVenta } from '../lib/vocabulario'
 
 export function Invitacion() {
   const { codigo = '' } = useParams()
@@ -30,15 +31,16 @@ export function Invitacion() {
   }
 
   const c = data.condiciones
+  const venta = esVenta(data)
 
   return (
     <MarcoAuth
-      titulo={`${data.prestamista} registró un préstamo contigo`}
+      titulo={venta ? `${data.prestamista} registró una venta a cuotas contigo` : `${data.prestamista} registró un préstamo contigo`}
       subtitulo="Míralo con calma. No pasa nada hasta que tú lo aceptes."
     >
       <div className="space-y-4">
         <div className="tarjeta p-5">
-          <p className="text-[13px] font-medium text-texto-2">Te prestaría</p>
+          <p className="text-[13px] font-medium text-texto-2">{venta ? `Valor total${data.concepto ? ` · ${data.concepto}` : ''}` : 'Te prestaría'}</p>
           <p className="cifra text-[38px] font-bold leading-tight">{pesos(c.montoPrincipal)}</p>
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-superficie-2 p-3">
@@ -53,9 +55,19 @@ export function Invitacion() {
         </div>
 
         <dl className="grupo">
-          <Fila k="Interés" v={`${c.tasaCorrienteMensualPct.toFixed(2)}% mensual`} extra={`${porcentaje(c.tasaCorrienteEA * 100)} efectivo anual`} />
-          <Fila k="Si te atrasas" v={c.modoMora === 'SIN_MORA' ? 'No se cobra mora' : `${c.tasaMoraMensualPct.toFixed(2)}% mensual`} />
-          <Fila k="Entrega de la plata" v={fechaLarga(c.fechaDesembolso)} />
+          {venta ? (
+            <>
+              <Fila k="Qué se vendió" v={data.concepto ?? '—'} />
+              <Fila k="Interés" v="Sin interés" />
+              <Fila k="Fecha de la venta" v={fechaLarga(c.fechaDesembolso)} />
+            </>
+          ) : (
+            <>
+              <Fila k="Interés" v={`${c.tasaCorrienteMensualPct.toFixed(2)}% mensual`} extra={`${porcentaje(c.tasaCorrienteEA * 100)} efectivo anual`} />
+              <Fila k="Si te atrasas" v={c.modoMora === 'SIN_MORA' ? 'No se cobra mora' : `${c.tasaMoraMensualPct.toFixed(2)}% mensual`} />
+              <Fila k="Entrega de la plata" v={fechaLarga(c.fechaDesembolso)} />
+            </>
+          )}
         </dl>
 
         {data.plan.totalIntereses > 0 && (

@@ -15,7 +15,8 @@ import {
 } from '../componentes/Iconos'
 import { Pantalla } from '../componentes/Pantalla'
 import { TablaDesglose } from '../componentes/TablaDesglose'
-import { ROL_TEXTO, avance } from '../componentes/TarjetaPrestamo'
+import { avance } from '../componentes/TarjetaPrestamo'
+import { esVenta, nombreRegistro, subtitulo } from '../lib/vocabulario'
 import { aNumero, fechaLarga, hoyISO, numero, pesos, porcentaje } from '../lib/formato'
 
 type Pestana = 'resumen' | 'plan' | 'pagos' | 'gente' | 'historial'
@@ -39,7 +40,7 @@ export function DetallePrestamo() {
 
   if (isLoading || !p) {
     return (
-      <Pantalla titulo="Préstamo" atras="/prestamos" textoAtras="Préstamos">
+      <Pantalla titulo="Cargando…" atras="/prestamos" textoAtras="Cuentas">
         <div className="space-y-4">
           <Esqueleto className="h-16 w-2/3 rounded-2xl" />
           <Esqueleto className="h-48 rounded-4xl" />
@@ -58,16 +59,17 @@ export function DetallePrestamo() {
     <Pantalla
       titulo={p.contraparte.nombre}
       atras="/prestamos"
-      textoAtras="Préstamos"
+      textoAtras="Cuentas"
       encabezado={
         <div className="flex items-center gap-4">
           <Avatar nombre={p.contraparte.nombre} tam={60} />
           <div className="min-w-0">
             <h1 className="truncate text-[26px] font-bold leading-tight tracking-tight">{p.contraparte.nombre}</h1>
             <p className="truncate text-[14px] text-texto-2">
-              {ROL_TEXTO[p.rol ?? ''] ?? 'Préstamo'}{p.descripcion ? ` · ${p.descripcion}` : ''}
+              {subtitulo(p)}
             </p>
             <div className="mt-1.5 flex gap-1.5">
+              {esVenta(p) && <span className="insignia bg-[#8b5cf6]/12 text-[#7c3aed] dark:text-[#c4b5fd]">Venta a cuotas</span>}
               <Insignia estado={p.estado} />
               {p.enMora && <Insignia estado="MORA" />}
             </div>
@@ -119,7 +121,7 @@ export function DetallePrestamo() {
 
         <div className="sticky z-20 -mx-4 px-4 py-2 vidrio" style={{ top: 'calc(env(safe-area-inset-top) + 48px)' }}>
           <Segmentos<Pestana>
-            etiqueta="Secciones del préstamo"
+            etiqueta="Secciones"
             valor={pestana}
             onCambio={setPestana}
             opciones={[
@@ -134,7 +136,7 @@ export function DetallePrestamo() {
 
         <div key={pestana} className="animate-entrada">
           {pestana === 'resumen' && <Resumen prestamo={p} />}
-          {pestana === 'plan' && <Plan id={id} />}
+          {pestana === 'plan' && <Plan id={id} venta={esVenta(p)} />}
           {pestana === 'pagos' && (
             <Pagos id={id} prestamo={p} miId={miId} alRegistrar={puedeRegistrar ? () => setRegistrando(true) : undefined} />
           )}
@@ -177,11 +179,13 @@ function HeroSaldo({ p }: { p: TDetalle }) {
         {p.rol === 'PRESTAMISTA' ? 'Te debe hoy' : 'Debes hoy'}
       </p>
       <p className="cifra mt-1 text-[40px] font-bold leading-none tracking-tight">{pesos(p.saldo.capital)}</p>
-      <p className="mt-1.5 text-[13px] text-white/75">de {pesos(p.montoPrincipal)} prestados · capital sin pagar</p>
+      <p className="mt-1.5 text-[13px] text-white/75">
+        {esVenta(p) ? `de ${pesos(p.montoPrincipal)} en total · saldo por pagar` : `de ${pesos(p.montoPrincipal)} prestados · capital sin pagar`}
+      </p>
 
       <div className="mt-4">
         <div className="mb-2 flex justify-between">
-          <span className="micro text-white/65">{p.rol === 'PRESTAMISTA' ? 'Recuperado' : 'Pagado'}</span>
+          <span className="micro text-white/65">{p.rol === 'PRESTAMISTA' ? (esVenta(p) ? 'Cobrado' : 'Recuperado') : 'Pagado'}</span>
           <span className="micro text-white/90">{Math.round(v * 100)}%</span>
         </div>
         <div className="h-2 overflow-hidden rounded-full bg-white/20">
@@ -190,11 +194,18 @@ function HeroSaldo({ p }: { p: TDetalle }) {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-3 gap-2.5">
-        <MiniCifra etiqueta="Intereses" valor={p.saldo.interesesPendientes} alerta={false} />
-        <MiniCifra etiqueta="Mora" valor={p.saldo.moraPendiente} alerta={p.saldo.moraPendiente > 0} />
-        <MiniCifra etiqueta="Vencido" valor={p.saldo.vencido} alerta={p.saldo.vencido > 0} />
-      </div>
+      {esVenta(p) ? (
+        <div className="mt-4 grid grid-cols-2 gap-2.5">
+          <MiniCifra etiqueta="Cuota" valor={p.cuota} alerta={false} />
+          <MiniCifra etiqueta="Vencido" valor={p.saldo.vencido} alerta={p.saldo.vencido > 0} />
+        </div>
+      ) : (
+        <div className="mt-4 grid grid-cols-3 gap-2.5">
+          <MiniCifra etiqueta="Intereses" valor={p.saldo.interesesPendientes} alerta={false} />
+          <MiniCifra etiqueta="Mora" valor={p.saldo.moraPendiente} alerta={p.saldo.moraPendiente > 0} />
+          <MiniCifra etiqueta="Vencido" valor={p.saldo.vencido} alerta={p.saldo.vencido > 0} />
+        </div>
+      )}
     </div>
   )
 }
@@ -215,14 +226,25 @@ function Resumen({ prestamo: p }: { prestamo: TDetalle }) {
       <section>
         <h2 className="titulo-seccion">Las condiciones</h2>
         <dl className="grupo">
-          <Fila k="Monto prestado" v={<span className="cifra">{pesos(c.montoPrincipal)}</span>} />
-          <Fila k="Entregado el" v={fechaLarga(c.fechaDesembolso)} />
-          <Fila k="Interés" v={`${c.tasaCorrienteMensualPct.toFixed(2)}% mensual`} extra={`${porcentaje(c.tasaCorrienteEA * 100)} efectivo anual`} />
-          <Fila
-            k="Mora"
-            v={c.modoMora === 'SIN_MORA' ? 'No se cobra' : `${c.tasaMoraMensualPct.toFixed(2)}% mensual`}
-            extra={c.modoMora === 'SIN_MORA' ? 'Se decidió no castigar el atraso' : 'Solo sobre lo vencido, por días'}
-          />
+          {esVenta(p) ? (
+            <>
+              <Fila k="Qué se vendió" v={p.concepto ?? '—'} />
+              <Fila k="Valor total" v={<span className="cifra">{pesos(c.montoPrincipal)}</span>} />
+              <Fila k="Fecha de la venta" v={fechaLarga(c.fechaDesembolso)} />
+              <Fila k="Interés" v="Sin interés" extra="Una venta a cuotas no lleva interés ni mora" />
+            </>
+          ) : (
+            <>
+              <Fila k="Monto prestado" v={<span className="cifra">{pesos(c.montoPrincipal)}</span>} />
+              <Fila k="Entregado el" v={fechaLarga(c.fechaDesembolso)} />
+              <Fila k="Interés" v={`${c.tasaCorrienteMensualPct.toFixed(2)}% mensual`} extra={`${porcentaje(c.tasaCorrienteEA * 100)} efectivo anual`} />
+              <Fila
+                k="Mora"
+                v={c.modoMora === 'SIN_MORA' ? 'No se cobra' : `${c.tasaMoraMensualPct.toFixed(2)}% mensual`}
+                extra={c.modoMora === 'SIN_MORA' ? 'Se decidió no castigar el atraso' : 'Solo sobre lo vencido, por días'}
+              />
+            </>
+          )}
           <Fila k="Cuota" v={c.cuota ? <span className="cifra">{pesos(c.cuota)}</span> : 'Libre'} />
           <Fila k="Plazo" v={c.plazo ? `${c.plazo} cuotas` : 'Sin plazo fijo'} />
           <Fila
@@ -280,18 +302,25 @@ function HojaExportar({ abierta, alCerrar, id }: { abierta: boolean; alCerrar():
   )
 }
 
-function Plan({ id }: { id: string }) {
+function Plan({ id, venta }: { id: string; venta: boolean }) {
   const { data, isLoading, error } = usePlan(id)
   if (isLoading) return <div className="space-y-3">{[0, 1, 2].map((i) => <Esqueleto key={i} className="h-32 rounded-3xl" />)}</div>
-  if (error) return <Aviso tipo="info">No tienes permiso para ver los montos de este préstamo.</Aviso>
+  if (error) return <Aviso tipo="info">No tienes permiso para ver los montos.</Aviso>
   if (!data) return null
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2.5">
-        <Dato etiqueta="Intereses" valor={pesos(data.totalIntereses)} cifra />
-        <Dato etiqueta="Mora" valor={data.totalMora > 0 ? pesos(data.totalMora) : 'Ninguna'} cifra={data.totalMora > 0} />
-        <Dato etiqueta="Termina en" valor={data.periodosHastaLiquidar ? `${data.periodosHastaLiquidar} cuotas` : '—'} />
-      </div>
+      {venta ? (
+        <div className="grid grid-cols-2 gap-2.5">
+          <Dato etiqueta="Total a pagar" valor={pesos(data.filas.reduce((s, f) => s + f.cuotaExigible, 0))} cifra />
+          <Dato etiqueta="Termina en" valor={data.periodosHastaLiquidar ? `${data.periodosHastaLiquidar} cuotas` : '—'} />
+        </div>
+      ) : (
+        <div className="grid grid-cols-3 gap-2.5">
+          <Dato etiqueta="Intereses" valor={pesos(data.totalIntereses)} cifra />
+          <Dato etiqueta="Mora" valor={data.totalMora > 0 ? pesos(data.totalMora) : 'Ninguna'} cifra={data.totalMora > 0} />
+          <Dato etiqueta="Termina en" valor={data.periodosHastaLiquidar ? `${data.periodosHastaLiquidar} cuotas` : '—'} />
+        </div>
+      )}
       <TablaDesglose filas={data.filas} />
     </div>
   )
@@ -317,10 +346,15 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
   const [proponiendo, setProponiendo] = useState(false)
   const yaAcepte = p.aceptaciones.some((a) => a.userId === miId)
 
-  const TEXTO =
-    `Acepto las condiciones de este préstamo: ${pesos(p.condiciones.montoPrincipal)} al ` +
-    `${p.condiciones.tasaCorrienteMensualPct}% mensual, con cuota de ${pesos(p.condiciones.cuota)}. ` +
-    `Entiendo que esta plataforma solo lleva el registro y no interviene en el acuerdo.`
+  // Este es el texto EXACTO que queda como constancia: en una venta debe decir
+  // que se paga un bien o servicio, no que se recibe un préstamo.
+  const TEXTO = esVenta(p)
+    ? `Acepto pagar ${pesos(p.condiciones.montoPrincipal)} por ${p.concepto ?? 'lo acordado'}` +
+      (p.condiciones.plazo ? ` en ${p.condiciones.plazo} cuotas de ${pesos(p.condiciones.cuota)}` : '') +
+      `, sin interés. Entiendo que esta plataforma solo lleva el registro y no interviene en el acuerdo.`
+    : `Acepto las condiciones de este préstamo: ${pesos(p.condiciones.montoPrincipal)} al ` +
+      `${p.condiciones.tasaCorrienteMensualPct}% mensual, con cuota de ${pesos(p.condiciones.cuota)}. ` +
+      `Entiendo que esta plataforma solo lleva el registro y no interviene en el acuerdo.`
 
   // Si la tasa pactada supera la usura, el backend exige una constancia aparte
   // (ADVERTENCIA_USURA) además de la de condiciones: sin ella devuelve 400 y la
@@ -341,7 +375,7 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
       <div className="flex items-center gap-3">
         <IconoEnCaja color="#2f9488"><IconoCheck tam={22} /></IconoEnCaja>
         <h2 className="text-[17px] font-bold">
-          {yaAcepte ? 'Ya aceptaste: falta la otra parte' : 'Este préstamo espera tu decisión'}
+          {yaAcepte ? 'Ya aceptaste: falta la otra parte' : `${esVenta(p) ? 'Esta venta' : 'Este préstamo'} espera tu decisión`}
         </h2>
       </div>
       <p className="mt-2 text-[14px] text-texto-2">
@@ -350,8 +384,10 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
       </p>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
-        <div className="col-span-2"><Dato etiqueta="Monto" valor={pesos(p.condiciones.montoPrincipal)} cifra /></div>
-        <Dato etiqueta="Interés" valor={`${p.condiciones.tasaCorrienteMensualPct}% mes`} />
+        <div className="col-span-2"><Dato etiqueta={esVenta(p) ? 'Valor total' : 'Monto'} valor={pesos(p.condiciones.montoPrincipal)} cifra /></div>
+        {esVenta(p)
+          ? <Dato etiqueta="Cuotas" valor={p.condiciones.plazo ? String(p.condiciones.plazo) : 'Libre'} />
+          : <Dato etiqueta="Interés" valor={`${p.condiciones.tasaCorrienteMensualPct}% mes`} />}
         <Dato etiqueta="Cuota" valor={p.condiciones.cuota ? pesos(p.condiciones.cuota) : 'Libre'} cifra={Boolean(p.condiciones.cuota)} />
       </div>
 
@@ -726,11 +762,11 @@ function Gente({ id, prestamo: p }: { id: string; prestamo: TDetalle }) {
   return (
     <div className="space-y-5">
       <section>
-        <h3 className="titulo-seccion">Quién más ve este préstamo</h3>
+        <h3 className="titulo-seccion">Quién más ve {nombreRegistro(p, true)}</h3>
         {visibles.length === 0 ? (
           <div className="tarjeta flex items-center gap-3.5">
             <IconoEnCaja color="#0ea5e9"><IconoPersonas tam={22} /></IconoEnCaja>
-            <p className="text-[15px] text-texto-2">Solo ustedes dos ven este préstamo.</p>
+            <p className="text-[15px] text-texto-2">Solo ustedes dos ven {nombreRegistro(p, true)}.</p>
           </div>
         ) : (
           <ul className="grupo">

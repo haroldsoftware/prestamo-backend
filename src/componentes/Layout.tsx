@@ -36,7 +36,7 @@ export function Layout() {
               )}
               {yo && !yo.emailVerificado && (
                 <Aviso tipo="atencion" titulo="Falta confirmar tu correo">
-                  Te enviamos un enlace al registrarte. Sin confirmarlo no puedes aceptar préstamos
+                  Te enviamos un enlace al registrarte. Sin confirmarlo no puedes aceptar préstamos o ventas
                   ni registrar o confirmar pagos.
                 </Aviso>
               )}
@@ -89,7 +89,7 @@ function BarraPestanas({ pendientes }: { pendientes: number }) {
         {/* Píldora flotante con las secciones */}
         <div className="vidrio-barra grid h-[var(--altura-tabbar)] flex-1 grid-cols-4 items-center gap-1 rounded-full p-1.5">
           <Pestana a="/" texto="Inicio" exacto icono={<IconoInicio />} />
-          <Pestana a="/prestamos" texto="Préstamos" icono={<IconoPrestamos />} />
+          <Pestana a="/prestamos" texto="Cuentas" icono={<IconoPrestamos />} />
           <Pestana a="/pagos" texto="Confirmar" icono={<IconoConfirmar />} contador={pendientes} />
           <Pestana a="/cuenta" texto="Cuenta" icono={<IconoCuenta />} />
         </div>
@@ -97,7 +97,7 @@ function BarraPestanas({ pendientes }: { pendientes: number }) {
         <NavLink
           to="/prestamos/nuevo"
           className="flex h-[var(--altura-tabbar)] w-[var(--altura-tabbar)] shrink-0 items-center justify-center rounded-full bg-marca-solido text-marca-sobre shadow-lg shadow-marca/30 transition active:scale-90"
-          aria-label="Registrar un préstamo"
+          aria-label="Registrar un préstamo o una venta"
         >
           <IconoMas tam={28} strokeWidth={2.4} />
         </NavLink>

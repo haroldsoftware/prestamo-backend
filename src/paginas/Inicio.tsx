@@ -54,11 +54,11 @@ export function Inicio() {
             <p className="micro text-white/70">Bienvenido</p>
             <h1 className="mt-2 text-[28px] font-bold leading-tight">Cuentas claras,<br />amistades largas.</h1>
             <p className="mt-3 text-[15px] text-white/85">
-              Registra un préstamo y lleva la cuenta sin discusiones: cuánto falta, cuánto es interés y
+              Registra un préstamo o una venta a cuotas y lleva la cuenta sin discusiones: cuánto falta, cuánto es interés y
               qué pasa si abonas de más. Cada pago lo confirman las dos partes.
             </p>
             <Link to="/prestamos/nuevo" className="btn mt-5 w-full bg-white text-[#1f6a63]">
-              <IconoMas tam={20} strokeWidth={2.4} /> Registrar un préstamo
+              <IconoMas tam={20} strokeWidth={2.4} /> Registrar un préstamo o venta
             </Link>
           </div>
           <div className="tarjeta text-[15px] text-texto-2">
@@ -122,7 +122,7 @@ export function Inicio() {
               <Mosaico
                 color={data.presté.enMora > 0 ? '#e5484d' : '#1e8458'}
                 icono={data.presté.enMora > 0 ? <IconoAlerta tam={22} /> : <IconoConfirmar tam={22} />}
-                etiqueta="Préstamos en mora"
+                etiqueta="En mora"
                 valor={data.presté.enMora > 0 ? `${data.presté.enMora} · ${pesos(data.presté.moraPorCobrar)}` : 'Todos al día'}
               />
             )}
@@ -136,7 +136,7 @@ export function Inicio() {
             {data.pendientesDeAceptar > 0 && (
               <Mosaico
                 color="#0ea5e9" icono={<IconoPersonas tam={22} />} a="/prestamos"
-                etiqueta="Sin aceptar" valor={`${data.pendientesDeAceptar} préstamo${data.pendientesDeAceptar === 1 ? '' : 's'}`}
+                etiqueta="Sin aceptar" valor={`${data.pendientesDeAceptar} por aceptar`}
               />
             )}
           </div>
@@ -145,7 +145,7 @@ export function Inicio() {
         {recientes.length > 0 && (
           <section>
             <div className="mb-3 flex items-baseline justify-between">
-              <h2 className="text-[20px] font-bold tracking-tight">Tus préstamos</h2>
+              <h2 className="text-[20px] font-bold tracking-tight">Tus cuentas</h2>
               <Link to="/prestamos" className="enlace text-[15px]">Ver todos</Link>
             </div>
             <div className="space-y-3">
@@ -225,7 +225,7 @@ function Hero({ data, activos }: { data: Dashboard; activos: ResumenPrestamo[] }
         ) : (
           <>
             <SubTarjeta etiqueta="Capital" icono={<IconoFlechaAbajo tam={14} />} tono="#fecaca" valor={pesos(data.debo.capital)} />
-            <SubTarjeta etiqueta="Préstamos" icono={<IconoGrafico tam={14} />} tono="#bae6fd" valor={String(data.debo.cantidad)} sinCifra />
+            <SubTarjeta etiqueta="Activas" icono={<IconoGrafico tam={14} />} tono="#bae6fd" valor={String(data.debo.cantidad)} sinCifra />
           </>
         )}
       </div>

@@ -2,6 +2,7 @@ import type { Estado, FilaDesglose, Proyeccion } from '@core'
 
 export type { Estado, FilaDesglose, Proyeccion }
 
+export type TipoRegistro = 'PRESTAMO' | 'VENTA_CUOTAS'
 export type RolPrestamo = 'PRESTAMISTA' | 'DEUDOR' | 'CODEUDOR' | 'OBSERVADOR'
 export type EstadoPrestamo =
   | 'BORRADOR' | 'EN_NEGOCIACION' | 'PENDIENTE_ACEPTACION'
@@ -51,6 +52,9 @@ export interface Condiciones {
 
 export interface ResumenPrestamo {
   id: string
+  tipo: TipoRegistro
+  /** En una venta: qué se vendió. */
+  concepto?: string
   rol: RolPrestamo | null
   estado: EstadoPrestamo
   descripcion?: string
@@ -157,6 +161,8 @@ export interface Dashboard {
 
 export interface Invitacion {
   loanId: string
+  tipo?: TipoRegistro
+  concepto?: string
   estado: EstadoPrestamo
   descripcion?: string
   prestamista: string
