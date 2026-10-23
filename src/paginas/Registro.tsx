@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api, ErrorApi } from '../api/cliente'
 import { Aviso } from '../componentes/base'
 import { IconoCorreo } from '../componentes/Iconos'
+import { BotonGoogle, SeparadorO } from '../componentes/BotonGoogle'
 import { CampoContrasena, MIN_CONTRASENA } from '../componentes/CampoContrasena'
 import { MarcoAuth } from '../componentes/MarcoAuth'
 
@@ -45,6 +46,8 @@ export function Registro() {
     <MarcoAuth titulo="Crea tu cuenta" subtitulo="Es gratis y toma un minuto.">
       <form onSubmit={enviar} className="tarjeta space-y-4 p-5">
         {error && <Aviso tipo="error">{error}</Aviso>}
+        <BotonGoogle texto="signup_with" onError={setError} />
+        <SeparadorO />
         <div>
           <label className="etiqueta" htmlFor="nombre">Tu nombre completo</label>
           <input

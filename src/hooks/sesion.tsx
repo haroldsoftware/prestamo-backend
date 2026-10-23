@@ -13,6 +13,7 @@ interface Sesion {
   usuario: Yo | null
   cargando: boolean
   entrar(email: string, password: string): Promise<void>
+  entrarConGoogle(credencial: string): Promise<void>
   salir(): Promise<void>
   refrescarUsuario(): Promise<void>
 }
@@ -55,6 +56,14 @@ export function ProveedorSesion({ children }: { children: ReactNode }) {
     await cargarUsuario()
   }, [cargarUsuario])
 
+  const entrarConGoogle = useCallback(async (credential: string) => {
+    const r = await api<{ accessToken: string; usuario: Yo }>('/auth/google', {
+      metodo: 'POST', cuerpo: { credential }, sinReintento: true,
+    })
+    fijarToken(r.accessToken)
+    await cargarUsuario()
+  }, [cargarUsuario])
+
   const salir = useCallback(async () => {
     try {
       await api('/auth/logout', { metodo: 'POST', sinReintento: true })
@@ -66,8 +75,8 @@ export function ProveedorSesion({ children }: { children: ReactNode }) {
   }, [qc])
 
   const valor = useMemo(
-    () => ({ usuario, cargando, entrar, salir, refrescarUsuario: cargarUsuario }),
-    [usuario, cargando, entrar, salir, cargarUsuario],
+    () => ({ usuario, cargando, entrar, entrarConGoogle, salir, refrescarUsuario: cargarUsuario }),
+    [usuario, cargando, entrar, entrarConGoogle, salir, cargarUsuario],
   )
 
   return <Ctx.Provider value={valor}>{children}</Ctx.Provider>

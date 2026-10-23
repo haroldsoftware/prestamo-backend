@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ErrorApi } from '../api/cliente'
 import { useSesion } from '../hooks/sesion'
 import { Aviso } from '../componentes/base'
+import { BotonGoogle, SeparadorO } from '../componentes/BotonGoogle'
 import { CampoContrasena } from '../componentes/CampoContrasena'
 import { MarcoAuth } from '../componentes/MarcoAuth'
 
@@ -35,6 +36,8 @@ export function Entrar() {
     <MarcoAuth titulo="Entra a tu cuenta" subtitulo="Lleva la cuenta de lo que prestas y lo que debes.">
       <form onSubmit={enviar} className="tarjeta space-y-4 p-5">
         {error && <Aviso tipo="error">{error}</Aviso>}
+        <BotonGoogle destino={destino} texto="signin_with" onError={setError} />
+        <SeparadorO />
         <div>
           <label className="etiqueta" htmlFor="email">Correo</label>
           <input

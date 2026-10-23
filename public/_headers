@@ -3,8 +3,9 @@
 /*
   # La API se sirve desde este mismo dominio (functions/api/[[ruta]].js la
   # reenvía a Cloud Run), así que connect-src 'self' basta. amazonaws.com queda
-  # para subir comprobantes directo a S3 con URL firmada.
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://*.amazonaws.com; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  # para subir comprobantes directo a S3 con URL firmada. accounts.google.com/gsi
+  # es el botón "Continuar con Google" (script, estilos e iframe de Google).
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://*.amazonaws.com https://accounts.google.com/gsi/; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: strict-origin-when-cross-origin
