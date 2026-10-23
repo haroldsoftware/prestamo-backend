@@ -72,6 +72,16 @@ export function BotonGoogle({
   const actual = useRef({ entrarConGoogle, navegar, destino, onError })
   actual.current = { entrarConGoogle, navegar, destino, onError }
 
+  // El botón de Google no sigue el tema solo: hay que pintarlo de nuevo si el
+  // sistema cambia entre claro y oscuro con la pantalla abierta.
+  const [oscuro, setOscuro] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const cambiar = (e: MediaQueryListEvent) => setOscuro(e.matches)
+    mq.addEventListener('change', cambiar)
+    return () => mq.removeEventListener('change', cambiar)
+  }, [])
+
   useEffect(() => {
     if (!CLIENT_ID) return
     let vivo = true
@@ -94,7 +104,7 @@ export function BotonGoogle({
             }
           },
         })
-        const oscuro = window.matchMedia('(prefers-color-scheme: dark)').matches
+        contenedor.current.replaceChildren()
         g.accounts.id.renderButton(contenedor.current, {
           type: 'standard',
           theme: oscuro ? 'filled_black' : 'outline',
@@ -109,13 +119,24 @@ export function BotonGoogle({
         if (vivo) actual.current.onError('No pudimos cargar el inicio de sesión con Google. Revisa tu conexión.')
       })
     return () => { vivo = false }
-  }, [texto])
+  }, [texto, oscuro])
 
   if (!CLIENT_ID) return null
 
   return (
     <div>
-      <div ref={contenedor} className={`flex min-h-[44px] justify-center ${entrando ? 'pointer-events-none opacity-50' : ''}`} />
+      {/*
+        color-scheme: light es a propósito. La página declara "light dark", y si
+        el iframe de Google no coincide con el esquema de su contenedor, el
+        navegador le pinta un fondo opaco (blanco en modo oscuro). Con "light"
+        coinciden y el fondo queda transparente. El tema del botón se elige
+        aparte, en renderButton.
+      */}
+      <div
+        ref={contenedor}
+        style={{ colorScheme: 'light' }}
+        className={`flex min-h-[44px] justify-center ${entrando ? 'pointer-events-none opacity-50' : ''}`}
+      />
       {entrando && <p className="ayuda mt-2 text-center">Entrando…</p>}
     </div>
   )
