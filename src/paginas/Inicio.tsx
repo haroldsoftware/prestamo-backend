@@ -66,6 +66,14 @@ export function Inicio() {
             Pídele a quien te prestó que lo registre con tu correo. Te llegará una invitación para
             revisar las condiciones antes de aceptar.
           </div>
+          <Link to="/simulador" className="tarjeta presionable flex items-center gap-3.5">
+            <IconoEnCaja color="#14b8a6"><IconoGrafico tam={22} /></IconoEnCaja>
+            <div className="min-w-0 flex-1">
+              <p className="text-[16px] font-semibold">Simulador de préstamos</p>
+              <p className="text-[13px] text-texto-2">Calcula cuota, plazo e intereses sin registrar nada.</p>
+            </div>
+            <IconoChevron tam={18} className="text-texto-3" />
+          </Link>
           <TarjetaInstalar />
         </div>
       </>
@@ -133,6 +141,10 @@ export function Inicio() {
                 etiqueta="Tu mora" valor={data.debo.mora > 0 ? pesos(data.debo.mora) : 'Vas al día'} cifra={data.debo.mora > 0}
               />
             )}
+            <Mosaico
+              color="#14b8a6" icono={<IconoGrafico tam={22} />} a="/simulador"
+              etiqueta="Simulador" valor="Calcular cuota"
+            />
             {data.pendientesDeAceptar > 0 && (
               <Mosaico
                 color="#0ea5e9" icono={<IconoPersonas tam={22} />} a="/prestamos"

@@ -14,6 +14,7 @@ import { Prestamos } from './paginas/Prestamos'
 import { Recuperar, Restablecer, VerificarEmail } from './paginas/Recuperar'
 import { Registro } from './paginas/Registro'
 import { Simulador } from './paginas/Simulador'
+import { SimuladorRapido } from './paginas/SimuladorRapido'
 
 /** Guarda de rutas. Recuerda a dónde iba el usuario para volver tras entrar. */
 function Privada({ children }: { children: ReactElement }) {
@@ -42,6 +43,7 @@ export function App() {
         <Route path="prestamos/nuevo" element={<NuevoPrestamo />} />
         <Route path="prestamos/:id" element={<DetallePrestamo />} />
         <Route path="prestamos/:id/simular" element={<Simulador />} />
+        <Route path="simulador" element={<SimuladorRapido />} />
         <Route path="pagos" element={<PagosPendientes />} />
         <Route path="cuenta" element={<Cuenta />} />
       </Route>
