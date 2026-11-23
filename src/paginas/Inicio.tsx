@@ -54,7 +54,7 @@ export function Inicio() {
             <p className="micro text-white/70">Bienvenido</p>
             <h1 className="mt-2 text-[28px] font-bold leading-tight">Cuentas claras,<br />amistades largas.</h1>
             <p className="mt-3 text-[15px] text-white/85">
-              Registra un préstamo o una venta a cuotas y lleva la cuenta sin discusiones: cuánto falta, cuánto es interés y
+              Registra un préstamo, una venta a cuotas o un CDT y lleva la cuenta sin discusiones: cuánto falta, cuánto es interés y
               qué pasa si abonas de más. Cada pago lo confirman las dos partes.
             </p>
             <Link to="/prestamos/nuevo" className="btn mt-5 w-full bg-white text-[#1f6a63]">

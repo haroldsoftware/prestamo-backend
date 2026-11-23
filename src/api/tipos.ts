@@ -2,7 +2,8 @@ import type { Estado, FilaDesglose, Proyeccion } from '@core'
 
 export type { Estado, FilaDesglose, Proyeccion }
 
-export type TipoRegistro = 'PRESTAMO' | 'VENTA_CUOTAS'
+/** CDT: plata entregada a término que se devuelve con un interés simple anual. */
+export type TipoRegistro = 'PRESTAMO' | 'VENTA_CUOTAS' | 'CDT'
 /** PERSONAL: lo lleva una sola persona, sin notificar a nadie. */
 export type ModoRegistro = 'COMPARTIDO' | 'PERSONAL'
 export type RolPrestamo = 'PRESTAMISTA' | 'DEUDOR' | 'CODEUDOR' | 'OBSERVADOR'
@@ -35,11 +36,13 @@ export interface Condiciones {
   montoPrincipal: number
   fechaDesembolso: string
   tasaCorrienteMensualPct: number
+  /** Solo CDT: tasa anual de interés simple, en porcentaje. */
+  tasaAnualPct?: number
   tasaCorrienteEA: number
   tasaMoraMensualPct: number
   tasaMoraEA: number
   modoMora: 'SIN_MORA' | 'PERSONALIZADA' | 'MAXIMO_LEGAL'
-  modoCalculo: 'CUOTA_FIJA' | 'PLAZO_FIJO' | 'LIBRE'
+  modoCalculo: 'CUOTA_FIJA' | 'PLAZO_FIJO' | 'LIBRE' | 'CDT_AL_VENCIMIENTO' | 'CDT_INTERES_MENSUAL'
   periodicidad: 'MENSUAL' | 'QUINCENAL' | 'SEMANAL' | 'PERSONALIZADA'
   diaCorte?: number
   ventana: { diasAntes: number; diasDespues: number }

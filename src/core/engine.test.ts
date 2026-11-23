@@ -225,3 +225,98 @@ describe('libro contable', () => {
     expect(reconstruirEstado([]).capital).toBe(0)
   })
 })
+
+describe('CDT — plata a término con interés simple anual', () => {
+  const CDT: Condiciones = {
+    montoPrincipal: 10_000_000,
+    fechaDesembolso: '2026-01-15',
+    tasaCorriente: tasaDesdePorcentaje(1),
+    tasaAnual: tasaDesdePorcentaje(12),
+    tasaMora: 0,
+    modoMora: 'SIN_MORA',
+    modoCalculo: 'CDT_AL_VENCIMIENTO',
+    periodicidad: 'MENSUAL',
+    diaCorte: 15,
+    ventana: { diasAntes: 0, diasDespues: 0 },
+    diasGracia: 0,
+    correrADiaHabil: false,
+    numeroCuotas: 12,
+  }
+
+  it('10 millones al 12 % por 12 meses devuelve 11,2 millones en un solo pago', () => {
+    const p = proyectar(CDT)
+    expect(p.totalIntereses).toBe(1_200_000)
+    expect(p.totalPagado).toBe(11_200_000)
+    expect(p.periodosHastaLiquidar).toBe(12)
+    expect(p.fechaLiquidacion).toBe('2027-01-15')
+    expect(p.filas.slice(0, 11).every((f) => f.pagado === 0 && f.cuotaExigible === 0 && f.vencido === 0)).toBe(true)
+    expect(p.filas[11]!.cuotaExigible).toBe(11_200_000)
+    expect(p.totalMora).toBe(0)
+    expect(cuotaExigible(CDT)).toBe(11_200_000)
+    expect(plazoEstimado(CDT)).toBe(12)
+  })
+
+  it('la tasa es anual y proporcional al plazo: 6 meses dan la mitad', () => {
+    const p = proyectar({ ...CDT, numeroCuotas: 6 })
+    expect(p.totalIntereses).toBe(600_000)
+    expect(p.periodosHastaLiquidar).toBe(6)
+  })
+
+  it('el total cuadra al peso aunque la tasa mensual no sea exacta (10 %)', () => {
+    const p = proyectar({ ...CDT, tasaAnual: tasaDesdePorcentaje(10), tasaCorriente: tasaDesdePorcentaje(10 / 12) })
+    expect(p.totalIntereses).toBe(1_000_000)
+  })
+
+  it('con intereses mensuales: $100.000 cada mes y el capital al final', () => {
+    const c: Condiciones = { ...CDT, modoCalculo: 'CDT_INTERES_MENSUAL' }
+    const p = proyectar(c)
+    expect(p.filas.slice(0, 11).every((f) => f.pagado === 100_000 && f.capitalFinal === 10_000_000)).toBe(true)
+    expect(p.filas[11]!.pagado).toBe(10_100_000)
+    expect(p.totalIntereses).toBe(1_200_000)
+    expect(cuotaExigible(c)).toBe(100_000)
+  })
+
+  it('devuelto antes: solo paga los días que tuvo la plata', () => {
+    const periodos = generarPeriodos(CDT.fechaDesembolso, configPeriodos(CDT), 12)
+    // Seis meses causados sin pagos.
+    let estado = estadoInicial(CDT)
+    for (const per of periodos.slice(0, 6)) estado = procesarPeriodo(estado, per, CDT, []).estado
+    expect(estado.interesesPendientes).toBe(600_000)
+
+    // Mes 7: del 15-jul al 15-ago (31 días). Devuelve el 30-jul (15 días).
+    const mes7 = periodos[6]!
+    expect(mes7.dias).toBe(31)
+    const parcial = Math.round((100_000 * 15) / 31)
+    const total = 10_000_000 + 600_000 + parcial
+    const r = procesarPeriodo(estado, mes7, CDT, [{ fecha: '2026-07-30', monto: total }], { periodoAnterior: periodos[5] })
+    expect(r.fila.interesDelPeriodo).toBe(parcial)
+    expect(r.estado).toEqual({ capital: 0, interesesPendientes: 0, moraPendiente: 0, vencido: 0 })
+  })
+
+  it('un abono que no liquida todo no recorta el interés del mes', () => {
+    const periodos = generarPeriodos(CDT.fechaDesembolso, configPeriodos(CDT), 2)
+    const r = procesarPeriodo(estadoInicial(CDT), periodos[0]!, CDT, [{ fecha: '2026-01-20', monto: 1_000_000 }])
+    expect(r.fila.interesDelPeriodo).toBe(100_000)
+  })
+
+  it('si no paga al vencimiento corre la mora pactada', () => {
+    const c: Condiciones = { ...CDT, modoMora: 'PERSONALIZADA', tasaMora: tasaDesdePorcentaje(2) }
+    const p = proyectar(c, { pagosPorPeriodo: { 12: 0 }, maxPeriodos: 13 })
+    expect(p.filas[11]!.vencido).toBe(11_200_000)
+    // Mora del 2 % mensual sobre lo vencido, un mes completo.
+    expect(p.filas[12]!.moraDelPeriodo).toBe(224_000)
+    // Pasado el vencimiento el capital sigue causando el interés pactado.
+    expect(p.filas[12]!.interesDelPeriodo).toBe(100_000)
+  })
+
+  it('el libro reconstruido coincide con la proyección', () => {
+    const p = proyectar(CDT)
+    const reconstruido = reconstruirEstado([
+      { tipo: 'DESEMBOLSO', fechaEfecto: CDT.fechaDesembolso, monto: CDT.montoPrincipal, periodoNumero: 0,
+        contexto: p.asientos[0]!.contexto },
+      ...p.asientos,
+    ])
+    expect(reconstruido.capital).toBe(0)
+    expect(reconstruido.interesesPendientes).toBe(0)
+  })
+})

@@ -53,6 +53,16 @@ export function hoyISO(): string {
   return bogota.toISOString().slice(0, 10)
 }
 
+/** Fecha ISO `meses` meses después, con el mismo día (o el último del mes si no existe). */
+export function sumarMeses(iso: string, meses: number): string {
+  const [a, m, d] = iso.split('-').map(Number) as [number, number, number]
+  const mes0 = m - 1 + meses
+  const anio = a + Math.floor(mes0 / 12)
+  const mes = ((mes0 % 12) + 12) % 12
+  const ultimo = new Date(Date.UTC(anio, mes + 1, 0)).getUTCDate()
+  return new Date(Date.UTC(anio, mes, Math.min(d, ultimo))).toISOString().slice(0, 10)
+}
+
 export function diasEntreISO(desde: string, hasta: string): number {
   return Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000)
 }

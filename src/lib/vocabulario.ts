@@ -9,14 +9,20 @@ export function esVenta(p: { tipo?: TipoRegistro } | null | undefined): boolean 
   return p?.tipo === 'VENTA_CUOTAS'
 }
 
+/** CDT: una persona le entrega plata a otra por unos meses y la recibe con intereses. */
+export function esCdtRegistro(p: { tipo?: TipoRegistro } | null | undefined): boolean {
+  return p?.tipo === 'CDT'
+}
+
 const ROLES: Record<TipoRegistro, Record<string, string>> = {
   PRESTAMO: { PRESTAMISTA: 'Le prestaste', DEUDOR: 'Te prestó', CODEUDOR: 'Eres codeudor', OBSERVADOR: 'Observas' },
   VENTA_CUOTAS: { PRESTAMISTA: 'Le vendiste', DEUDOR: 'Te vendió', CODEUDOR: 'Eres codeudor', OBSERVADOR: 'Observas' },
+  CDT: { PRESTAMISTA: 'Le entregaste plata', DEUDOR: 'Te entregó plata', CODEUDOR: 'Eres codeudor', OBSERVADOR: 'Observas' },
 }
 
 /** "Le prestaste" / "Le vendiste" / … */
 export function textoRol(p: { tipo?: TipoRegistro; rol: RolPrestamo | null }): string {
-  return ROLES[p.tipo ?? 'PRESTAMO'][p.rol ?? ''] ?? (esVenta(p) ? 'Venta a cuotas' : 'Préstamo')
+  return ROLES[p.tipo ?? 'PRESTAMO'][p.rol ?? ''] ?? (esVenta(p) ? 'Venta a cuotas' : esCdtRegistro(p) ? 'CDT' : 'Préstamo')
 }
 
 export function esPersonal(p: { modo?: string } | null | undefined): boolean {
@@ -34,5 +40,6 @@ export function subtitulo(p: {
 
 export function nombreRegistro(p: { tipo?: TipoRegistro }, articulo = false): string {
   if (esVenta(p)) return articulo ? 'esta venta' : 'venta a cuotas'
+  if (esCdtRegistro(p)) return articulo ? 'este CDT' : 'CDT'
   return articulo ? 'este préstamo' : 'préstamo'
 }

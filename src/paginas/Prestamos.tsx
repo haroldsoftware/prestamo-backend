@@ -55,7 +55,7 @@ export function Prestamos() {
         </div>
       ) : !data?.length ? (
         <Vacio titulo="Todavía no tienes cuentas" icono={<IconoPrestamos tam={30} />}>
-          Registra un préstamo o una venta a cuotas y verás desde el día uno cuánto falta por pagar.
+          Registra un préstamo, una venta a cuotas o un CDT y verás desde el día uno cuánto falta por pagar.
           <Link className="btn-primario mt-5 w-full" to="/prestamos/nuevo">Registrar</Link>
         </Vacio>
       ) : (

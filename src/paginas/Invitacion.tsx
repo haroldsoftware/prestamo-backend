@@ -12,7 +12,7 @@ import { Aviso, Cargando, Fila } from '../componentes/base'
 import { MarcoAuth } from '../componentes/MarcoAuth'
 import { TablaDesglose } from '../componentes/TablaDesglose'
 import { fechaLarga, pesos, porcentaje } from '../lib/formato'
-import { esVenta } from '../lib/vocabulario'
+import { esCdtRegistro, esVenta } from '../lib/vocabulario'
 
 export function Invitacion() {
   const { codigo = '' } = useParams()
@@ -32,18 +32,20 @@ export function Invitacion() {
 
   const c = data.condiciones
   const venta = esVenta(data)
+  const cdt = esCdtRegistro(data)
   const personal = data.modo === 'PERSONAL'
 
   return (
     <MarcoAuth
       titulo={personal
         ? `${data.prestamista} te invita a llevar juntos esta cuenta`
-        : venta ? `${data.prestamista} registró una venta a cuotas contigo` : `${data.prestamista} registró un préstamo contigo`}
+        : venta ? `${data.prestamista} registró una venta a cuotas contigo`
+          : cdt ? `${data.prestamista} registró un CDT contigo` : `${data.prestamista} registró un préstamo contigo`}
       subtitulo="Míralo con calma. No pasa nada hasta que tú lo aceptes."
     >
       <div className="space-y-4">
         <div className="tarjeta p-5">
-          <p className="text-[13px] font-medium text-texto-2">{venta ? `Valor total${data.concepto ? ` · ${data.concepto}` : ''}` : 'Te prestaría'}</p>
+          <p className="text-[13px] font-medium text-texto-2">{venta ? `Valor total${data.concepto ? ` · ${data.concepto}` : ''}` : cdt ? 'Te entregaría' : 'Te prestaría'}</p>
           <p className="cifra text-[38px] font-bold leading-tight">{pesos(c.montoPrincipal)}</p>
           {personal && data.saldoActual !== undefined && (
             <p className="mt-1 text-[15px] text-texto-2">
@@ -53,7 +55,9 @@ export function Invitacion() {
           )}
           <div className="mt-3 grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-superficie-2 p-3">
-              <p className="text-[12px] text-texto-2">Pagarías cada mes</p>
+              <p className="text-[12px] text-texto-2">
+                {cdt ? (c.modoCalculo === 'CDT_INTERES_MENSUAL' ? 'Intereses cada mes' : 'Devolverías al final') : 'Pagarías cada mes'}
+              </p>
               <p className="cifra text-[18px] font-bold">{c.cuota ? pesos(c.cuota) : 'Libre'}</p>
             </div>
             <div className="rounded-2xl bg-superficie-2 p-3">
@@ -64,7 +68,17 @@ export function Invitacion() {
         </div>
 
         <dl className="grupo">
-          {venta ? (
+          {cdt ? (
+            <>
+              <Fila
+                k="Interés"
+                v={`${porcentaje(c.tasaAnualPct ?? 0)} anual`}
+                extra={`Simple · ${c.modoCalculo === 'CDT_INTERES_MENSUAL' ? 'se paga cada mes' : 'se paga al vencimiento'}`}
+              />
+              <Fila k="Si no devuelves a tiempo" v={c.modoMora === 'SIN_MORA' ? 'No se cobra mora' : `${c.tasaMoraMensualPct.toFixed(2)}% mensual`} />
+              <Fila k="Entrega de la plata" v={fechaLarga(c.fechaDesembolso)} />
+            </>
+          ) : venta ? (
             <>
               <Fila k="Qué se vendió" v={data.concepto ?? '—'} />
               <Fila k="Interés" v="Sin interés" />
@@ -82,7 +96,7 @@ export function Invitacion() {
         {data.plan.totalIntereses > 0 && (
           <Aviso tipo="info">
             En total pagarías <strong className="cifra">{pesos(c.montoPrincipal + data.plan.totalIntereses)}</strong>:{' '}
-            {pesos(c.montoPrincipal)} de lo prestado y <strong className="cifra">{pesos(data.plan.totalIntereses)}</strong> de intereses.
+            {pesos(c.montoPrincipal)} de {cdt ? 'lo entregado' : 'lo prestado'} y <strong className="cifra">{pesos(data.plan.totalIntereses)}</strong> de intereses.
           </Aviso>
         )}
 
@@ -95,12 +109,12 @@ export function Invitacion() {
         )}
 
         <section>
-          <h2 className="titulo-seccion">Así quedarían tus primeros pagos</h2>
+          <h2 className="titulo-seccion">{cdt ? 'Así quedaría mes a mes' : 'Así quedarían tus primeros pagos'}</h2>
           <TablaDesglose filas={data.plan.filas} />
         </section>
 
         <div className="tarjeta space-y-3 p-5 text-center">
-          <p className="text-[16px] font-semibold">Para aceptar o proponer otra cuota, entra a tu cuenta</p>
+          <p className="text-[16px] font-semibold">Para aceptar o proponer {cdt ? 'cambios' : 'otra cuota'}, entra a tu cuenta</p>
           <p className="text-[14px] text-texto-2">
             Si no tienes, créala con el correo <strong className="text-texto">{data.emailInvitado}</strong>.
           </p>

@@ -16,10 +16,12 @@ import { useCrearPrestamo, useUsuraVigente } from '../api/hooks'
 import { Aviso, ConfirmacionEscrita } from '../componentes/base'
 import { Pantalla } from '../componentes/Pantalla'
 import { TablaDesglose } from '../componentes/TablaDesglose'
-import { aNumero, hoyISO, numero, pesos, porcentaje } from '../lib/formato'
+import { aNumero, fechaLarga, hoyISO, numero, pesos, porcentaje, sumarMeses } from '../lib/formato'
+
+type ModoCdt = 'CDT_AL_VENCIMIENTO' | 'CDT_INTERES_MENSUAL'
 
 type Entrada = {
-  tipo: 'PRESTAMO' | 'VENTA_CUOTAS'
+  tipo: 'PRESTAMO' | 'VENTA_CUOTAS' | 'CDT'
   concepto: string
   modo: 'COMPARTIDO' | 'PERSONAL'
   contraparteNombre: string
@@ -41,6 +43,9 @@ type Entrada = {
   cuotaPactada: number
   numeroCuotas: number
   autoConfirmarPagosDelPrestamista: boolean
+  /** CDT: tasa anual simple (%) y cuándo se pagan los intereses. El plazo va en numeroCuotas. */
+  tasaAnualPct: number
+  modoCdt: ModoCdt
 }
 
 const INICIAL: Entrada = {
@@ -50,7 +55,18 @@ const INICIAL: Entrada = {
   modoCalculo: 'CUOTA_FIJA', periodicidad: 'MENSUAL', diaCorte: 30,
   diasAntes: 2, diasDespues: 2, diasGracia: 0, correrADiaHabil: false,
   cuotaPactada: 0, numeroCuotas: 12, autoConfirmarPagosDelPrestamista: false,
+  tasaAnualPct: 12, modoCdt: 'CDT_AL_VENCIMIENTO',
 }
+
+const TIPO_POR_PARAMETRO: Record<string, Entrada['tipo']> = { venta: 'VENTA_CUOTAS', cdt: 'CDT' }
+
+/** Tasa efectiva anual de un CDT (la misma cuenta del servidor), para compararla con la usura. */
+function efectivaAnualCdt(tasaAnualPct: number, meses: number, modo: ModoCdt): number {
+  const a = tasaAnualPct / 100
+  if (modo === 'CDT_INTERES_MENSUAL') return Math.pow(1 + a / 12, 12) - 1
+  return Math.pow(1 + (a * Math.max(1, meses)) / 12, 12 / Math.max(1, meses)) - 1
+}
+
 
 /**
  * Respaldo para el caso raro en que el servidor exija la aceptación y el
@@ -64,13 +80,18 @@ const TEXTO_ADVERTENCIA_GENERICO =
 export function NuevoPrestamo() {
   const [paso, setPaso] = useState(1)
   const [params] = useSearchParams()
-  const [d, setD] = useState<Entrada>(() => ({ ...INICIAL, tipo: params.get('tipo') === 'venta' ? 'VENTA_CUOTAS' : 'PRESTAMO' }))
+  const [d, setD] = useState<Entrada>(() => ({ ...INICIAL, tipo: TIPO_POR_PARAMETRO[params.get('tipo') ?? ''] ?? 'PRESTAMO' }))
   // Una venta a cuotas no lleva interés ni mora: se ignoran esos campos.
   const venta = d.tipo === 'VENTA_CUOTAS'
+  // Un CDT: plata entregada a término con interés simple ANUAL; siempre mensual,
+  // vence el mismo día del mes en que se entregó.
+  const cdt = d.tipo === 'CDT'
+  const diaEntrega = Number(d.fechaDesembolso.slice(8, 10)) || 1
+  const vencimiento = cdt ? sumarMeses(d.fechaDesembolso, Math.max(1, d.numeroCuotas)) : ''
   const personal = d.modo === 'PERSONAL'
   // En personal el dueño puede ser quien debe; en compartido siempre es quien presta o vende.
   const yoDebo = personal && d.rolDueno === 'DEUDOR'
-  const tasaPct = venta ? 0 : d.tasaCorrienteMensualPct
+  const tasaPct = venta ? 0 : cdt ? d.tasaAnualPct / 12 : d.tasaCorrienteMensualPct
   const modoMora: Entrada['modoMora'] = venta ? 'SIN_MORA' : d.modoMora
   const [confirmacion, setConfirmacion] = useState('')
   const [aceptaUsura, setAceptaUsura] = useState(false)
@@ -85,12 +106,31 @@ export function NuevoPrestamo() {
   const set = <K extends keyof Entrada>(k: K, v: Entrada[K]) => {
     // Si cambia la tasa o la periodicidad, la advertencia que el usuario aceptó
     // ya no es la que aplica: hay que volver a mostrarla y volver a aceptarla.
-    if (k === 'tasaCorrienteMensualPct' || k === 'periodicidad') setAceptaUsura(false)
+    if (k === 'tasaCorrienteMensualPct' || k === 'periodicidad' || k === 'tasaAnualPct' || k === 'modoCdt' || k === 'numeroCuotas') {
+      setAceptaUsura(false)
+    }
     setD((x) => ({ ...x, [k]: v }))
   }
 
   const condicionesMotor = useMemo((): CondicionesMotor | null => {
     if (!d.montoPrincipal) return null
+    if (cdt) {
+      return {
+        montoPrincipal: d.montoPrincipal,
+        fechaDesembolso: d.fechaDesembolso,
+        tasaCorriente: tasaDesdeDecimal(d.tasaAnualPct / 100 / 12),
+        tasaAnual: tasaDesdePorcentaje(d.tasaAnualPct),
+        tasaMora: modoMora === 'SIN_MORA' ? 0 : tasaDesdePorcentaje(d.tasaMoraMensualPct),
+        modoMora,
+        modoCalculo: d.modoCdt,
+        periodicidad: 'MENSUAL',
+        diaCorte: diaEntrega,
+        ventana: { diasAntes: d.diasAntes, diasDespues: d.diasDespues },
+        diasGracia: d.diasGracia,
+        correrADiaHabil: d.correrADiaHabil,
+        numeroCuotas: Math.max(1, d.numeroCuotas),
+      }
+    }
     return {
       montoPrincipal: d.montoPrincipal,
       fechaDesembolso: d.fechaDesembolso,
@@ -128,12 +168,17 @@ export function NuevoPrestamo() {
   // lo vea ANTES de darle a crear, no después de un error.
   const evalUsura = useMemo(() => {
     if (!usura || venta) return null
+    if (cdt) {
+      // Se compara su tasa efectiva anual, expresada como tasa mensual equivalente.
+      const ea = efectivaAnualCdt(d.tasaAnualPct, d.numeroCuotas, d.modoCdt)
+      return evaluarUsura(tasaDesdeDecimal(Math.pow(1 + ea, 1 / 12) - 1), 12, tasaDesdeDecimal(usura.usuraEA))
+    }
     return evaluarUsura(
       tasaDesdePorcentaje(d.tasaCorrienteMensualPct),
       periodosPorAnio(d.periodicidad),
       tasaDesdeDecimal(usura.usuraEA),
     )
-  }, [usura, venta, d.tasaCorrienteMensualPct, d.periodicidad])
+  }, [usura, venta, cdt, d.tasaCorrienteMensualPct, d.periodicidad, d.tasaAnualPct, d.numeroCuotas, d.modoCdt])
 
   const excedeUsura = Boolean(evalUsura?.excede)
 
@@ -147,7 +192,7 @@ export function NuevoPrestamo() {
   const textoAdvertencia = useMemo(() => {
     if (!evalUsura || !usura || !evalUsura.excede) return null
     return [
-      `La tasa que estás pactando es de ${d.tasaCorrienteMensualPct}% mensual, ` +
+      `La tasa que estás pactando es de ${cdt ? `${d.tasaAnualPct}% anual` : `${d.tasaCorrienteMensualPct}% mensual`}, ` +
         `equivalente a ${porcentaje(tasaADecimal(evalUsura.pactadaEA) * 100)} efectivo anual.`,
       `La tasa de usura vigente es ${porcentaje(usura.usuraEA * 100)} efectivo anual ` +
         `(certificación: ${usura.fechaCertificacion}, fuente: ${usura.fuente}).`,
@@ -158,7 +203,7 @@ export function NuevoPrestamo() {
         'responsabilidad de pactarla por encima del tope legal. Esta plataforma no ' +
         'certifica la tasa vigente: la verifico directamente con la Superintendencia Financiera.',
     ].join('\n\n')
-  }, [evalUsura, usura, d.tasaCorrienteMensualPct])
+  }, [evalUsura, usura, cdt, d.tasaAnualPct, d.tasaCorrienteMensualPct])
 
   async function enviar() {
     setError('')
@@ -177,14 +222,15 @@ export function NuevoPrestamo() {
           tasaCorrienteMensualPct: tasaPct,
           modoMora,
           tasaMoraMensualPct: modoMora === 'PERSONALIZADA' ? d.tasaMoraMensualPct : undefined,
-          modoCalculo: d.modoCalculo,
-          periodicidad: d.periodicidad,
-          diaCorte: d.diaCorte,
+          modoCalculo: cdt ? d.modoCdt : d.modoCalculo,
+          periodicidad: cdt ? 'MENSUAL' : d.periodicidad,
+          diaCorte: cdt ? diaEntrega : d.diaCorte,
           ventana: { diasAntes: d.diasAntes, diasDespues: d.diasDespues },
           diasGracia: d.diasGracia,
           correrADiaHabil: d.correrADiaHabil,
-          cuotaPactada: d.modoCalculo === 'CUOTA_FIJA' ? d.cuotaPactada : undefined,
-          numeroCuotas: d.modoCalculo === 'PLAZO_FIJO' ? d.numeroCuotas : undefined,
+          cuotaPactada: !cdt && d.modoCalculo === 'CUOTA_FIJA' ? d.cuotaPactada : undefined,
+          numeroCuotas: cdt || d.modoCalculo === 'PLAZO_FIJO' ? d.numeroCuotas : undefined,
+          tasaAnualPct: cdt ? d.tasaAnualPct : undefined,
           autoConfirmarPagosDelPrestamista: personal ? false : d.autoConfirmarPagosDelPrestamista,
         },
         aceptaAdvertenciaUsura: pedirAceptacionUsura && aceptaUsura ? true : undefined,
@@ -209,7 +255,7 @@ export function NuevoPrestamo() {
 
   return (
     <Pantalla
-      titulo={venta ? 'Nueva venta a cuotas' : 'Nuevo préstamo'}
+      titulo={venta ? 'Nueva venta a cuotas' : cdt ? 'Nuevo CDT' : 'Nuevo préstamo'}
       atras="/"
       textoAtras="Cancelar"
       subtitulo={`Paso ${paso} de 4 · ${pasos[paso - 1]}`}
@@ -229,10 +275,11 @@ export function NuevoPrestamo() {
           <>
             <fieldset>
               <legend className="etiqueta">¿Qué quieres registrar?</legend>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid gap-2 sm:grid-cols-3">
                 {([
                   ['PRESTAMO', 'Un préstamo', 'Le prestas plata a alguien'],
                   ['VENTA_CUOTAS', 'Una venta a cuotas', 'Vendiste algo y te lo pagan por partes'],
+                  ['CDT', 'Un CDT', 'Entregas plata unos meses y te la devuelven con intereses'],
                 ] as const).map(([valor, titulo, ayuda]) => (
                   <label
                     key={valor}
@@ -274,8 +321,8 @@ export function NuevoPrestamo() {
                   <span className="etiqueta">¿Tú qué eres en esta cuenta?</span>
                   <div className="grid grid-cols-2 gap-2">
                     {([
-                      ['ACREEDOR', venta ? 'Yo vendí' : 'Yo presté'],
-                      ['DEUDOR', venta ? 'Yo compré' : 'Me prestaron'],
+                      ['ACREEDOR', venta ? 'Yo vendí' : cdt ? 'Yo entregué la plata' : 'Yo presté'],
+                      ['DEUDOR', venta ? 'Yo compré' : cdt ? 'Yo la recibí' : 'Me prestaron'],
                     ] as const).map(([valor, texto]) => (
                       <button
                         key={valor} type="button" onClick={() => set('rolDueno', valor)}
@@ -290,7 +337,9 @@ export function NuevoPrestamo() {
                 </div>
                 <div>
                   <label className="etiqueta" htmlFor="contraparte">
-                    {yoDebo ? (venta ? '¿A quién le compraste?' : '¿Quién te prestó?') : (venta ? '¿A quién le vendiste?' : '¿A quién le prestaste?')}
+                    {yoDebo
+                      ? (venta ? '¿A quién le compraste?' : cdt ? '¿Quién te entregó la plata?' : '¿Quién te prestó?')
+                      : (venta ? '¿A quién le vendiste?' : cdt ? '¿A quién le entregaste la plata?' : '¿A quién le prestaste?')}
                   </label>
                   <input
                     id="contraparte" className="campo" value={d.contraparteNombre} maxLength={120} autoComplete="off"
@@ -301,14 +350,16 @@ export function NuevoPrestamo() {
               </>
             ) : (
             <div>
-              <label className="etiqueta" htmlFor="deudor">{venta ? '¿A quién le vendes?' : '¿A quién le prestas?'}</label>
+              <label className="etiqueta" htmlFor="deudor">
+                {venta ? '¿A quién le vendes?' : cdt ? '¿A quién le entregas la plata?' : '¿A quién le prestas?'}
+              </label>
               <input
                 id="deudor" type="email" inputMode="email" autoCapitalize="none" autoCorrect="off" className="campo" value={d.emailDeudor}
                 onChange={(e) => set('emailDeudor', e.target.value)} placeholder="correo@ejemplo.com"
               />
               <p className="ayuda">
                 Le enviaremos la invitación a ese correo. Podrá ver las condiciones antes de
-                registrarse, y {venta ? 'la venta' : 'el préstamo'} solo empieza cuando la acepte.
+                registrarse, y {venta ? 'la venta' : cdt ? 'el CDT' : 'el préstamo'} solo empieza cuando la acepte.
               </p>
             </div>
             )}
@@ -336,7 +387,9 @@ export function NuevoPrestamo() {
         {paso === 2 && (
           <>
             <div>
-              <label className="etiqueta" htmlFor="monto">{venta ? '¿Cuál es el valor total?' : '¿Cuánto le prestas?'}</label>
+              <label className="etiqueta" htmlFor="monto">
+                {venta ? '¿Cuál es el valor total?' : cdt ? '¿Cuánta plata entregas?' : '¿Cuánto le prestas?'}
+              </label>
               <input
                 id="monto" className="campo cifra text-[28px] font-bold" inputMode="numeric" value={numero(d.montoPrincipal)}
                 onChange={(e) => set('montoPrincipal', aNumero(e.target.value))} placeholder="1.000.000"
@@ -353,6 +406,31 @@ export function NuevoPrestamo() {
               <p className="rounded-2xl bg-marca-suave px-4 py-3 text-[14px] text-texto">
                 <strong>Sin interés.</strong> Una venta a cuotas solo cobra el valor acordado, repartido en cuotas.
               </p>
+            ) : cdt ? (
+            <div>
+              <label className="etiqueta" htmlFor="tasa-anual">Interés anual</label>
+              <div className="flex items-center gap-2">
+                <input
+                  id="tasa-anual" type="number" step="0.1" min="0" max="100" className="campo w-32"
+                  value={d.tasaAnualPct}
+                  onChange={(e) => set('tasaAnualPct', Number(e.target.value))}
+                />
+                <span className="text-texto-2">% al año</span>
+              </div>
+              <p className="ayuda">
+                Interés simple y proporcional al plazo: en 12 meses son{' '}
+                <strong>{pesos(Math.round((d.montoPrincipal * d.tasaAnualPct) / 100))}</strong>, en 6 meses la mitad.
+              </p>
+              {excedeUsura && (
+                <div className="mt-3">
+                  <Aviso tipo="atencion" titulo="Esta tasa supera la usura vigente">
+                    Su equivalente efectivo anual va {porcentaje(evalUsura?.excesoPuntos ?? 0)} puntos por encima
+                    del tope de {porcentaje((usura?.usuraEA ?? 0) * 100)}. Puedes seguir, pero en el último paso
+                    tendrás que aceptar la advertencia de forma expresa.
+                  </Aviso>
+                </div>
+              )}
+            </div>
             ) : (
             <div>
               <label className="etiqueta" htmlFor="tasa">Interés mensual</label>
@@ -390,6 +468,46 @@ export function NuevoPrestamo() {
 
         {paso === 3 && (
           <>
+            {cdt ? (
+            <>
+            <div>
+              <label className="etiqueta" htmlFor="meses">¿A cuántos meses?</label>
+              <input
+                id="meses" type="number" min="1" max="600" className="campo w-32"
+                value={d.numeroCuotas || ''} onChange={(e) => set('numeroCuotas', Number(e.target.value))}
+              />
+              {d.numeroCuotas >= 1 && (
+                <p className="ayuda">Vence el <strong>{fechaLarga(vencimiento)}</strong>.</p>
+              )}
+            </div>
+            <fieldset>
+              <legend className="etiqueta">¿Cuándo se pagan los intereses?</legend>
+              <div className="grid gap-2">
+                {([
+                  ['CDT_AL_VENCIMIENTO', 'Todo al final', 'Un solo pago al vencimiento: la plata más los intereses'],
+                  ['CDT_INTERES_MENSUAL', 'Cada mes', 'Los intereses mes a mes y la plata al vencimiento'],
+                ] as const).map(([valor, titulo, ayuda]) => (
+                  <label
+                    key={valor}
+                    className={`block cursor-pointer rounded-2xl p-3.5 text-[15px] transition active:scale-[0.98] ${
+                      d.modoCdt === valor ? 'bg-texto text-fondo' : 'bg-superficie-2'
+                    }`}
+                  >
+                    <input
+                      type="radio" name="modo-cdt" className="sr-only" checked={d.modoCdt === valor}
+                      onChange={() => set('modoCdt', valor)}
+                    />
+                    <span className="block font-semibold">{titulo}</span>
+                    <span className="text-[13px] opacity-70">{ayuda}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="ayuda">
+                Si la devuelve antes, paga solo los intereses de los días que tuvo la plata.
+              </p>
+            </fieldset>
+            </>
+            ) : (<>
             <fieldset>
               <legend className="etiqueta">¿Cómo se define el pago?</legend>
               <div className="grid gap-2">
@@ -446,6 +564,7 @@ export function NuevoPrestamo() {
                 )}
               </div>
             )}
+            </>)}
 
             {!venta && (<>
             {/* Decisión consciente: no hay valor preseleccionado */}
@@ -489,6 +608,7 @@ export function NuevoPrestamo() {
             </>)}
 
             <div className="grid gap-4 sm:grid-cols-2">
+              {!cdt && (
               <div>
                 <label className="etiqueta" htmlFor="corte">Día de pago de cada mes</label>
                 <input
@@ -496,6 +616,7 @@ export function NuevoPrestamo() {
                   value={d.diaCorte} onChange={(e) => set('diaCorte', Number(e.target.value))}
                 />
               </div>
+              )}
               <div>
                 <label className="etiqueta">Margen para pagar</label>
                 <div className="flex items-center gap-2 text-sm">
@@ -510,11 +631,15 @@ export function NuevoPrestamo() {
                   />
                   <span>después</span>
                 </div>
+                {cdt ? (
+                  <p className="ayuda">Días de margen alrededor del vencimiento para pagar sin mora.</p>
+                ) : (
                 <p className="ayuda">
                   Puede pagar entre el {Math.max(1, d.diaCorte - d.diasAntes)} y el{' '}
                   {d.diaCorte + d.diasDespues > 30 ? d.diaCorte + d.diasDespues - 30 : d.diaCorte + d.diasDespues}
                   {d.diaCorte + d.diasDespues > 30 ? ' del mes siguiente' : ''}.
                 </p>
+                )}
               </div>
             </div>
 
@@ -552,7 +677,9 @@ export function NuevoPrestamo() {
             <div className="grid grid-cols-1 gap-3">
               <div>
                 <p className="text-sm text-texto-2">
-                  {yoDebo ? (venta ? 'Le compras a' : 'Te prestó') : (venta ? 'Le vendes a' : 'Le prestas a')}
+                  {yoDebo
+                    ? (venta ? 'Le compras a' : cdt ? 'Te entregó la plata' : 'Te prestó')
+                    : (venta ? 'Le vendes a' : cdt ? 'Le entregas la plata a' : 'Le prestas a')}
                 </p>
                 <p className="font-semibold">{personal ? d.contraparteNombre : d.emailDeudor}</p>
               </div>
@@ -562,12 +689,43 @@ export function NuevoPrestamo() {
               </div>
               {venta && <div><p className="text-sm text-texto-2">Qué vendiste</p><p className="font-semibold">{d.concepto}</p></div>}
               <div><p className="text-sm text-texto-2">{venta ? 'Valor total' : 'Monto'}</p><p className="font-semibold">{pesos(d.montoPrincipal)}</p></div>
-              <div><p className="text-sm text-texto-2">Interés</p><p className="font-semibold">{venta ? 'Sin interés' : `${d.tasaCorrienteMensualPct}% mensual`}</p></div>
+              <div>
+                <p className="text-sm text-texto-2">Interés</p>
+                <p className="font-semibold">
+                  {venta ? 'Sin interés' : cdt
+                    ? `${d.tasaAnualPct}% anual · ${d.modoCdt === 'CDT_INTERES_MENSUAL' ? 'pagado cada mes' : 'pagado al final'}`
+                    : `${d.tasaCorrienteMensualPct}% mensual`}
+                </p>
+              </div>
+              {cdt && (
+                <div>
+                  <p className="text-sm text-texto-2">Plazo</p>
+                  <p className="font-semibold">{d.numeroCuotas} {d.numeroCuotas === 1 ? 'mes' : 'meses'} · vence el {fechaLarga(vencimiento)}</p>
+                </div>
+              )}
             </div>
 
             {planValido && (
               <>
-                {venta ? (
+                {cdt ? (
+                  <Aviso tipo="info">
+                    {d.modoCdt === 'CDT_INTERES_MENSUAL' ? (
+                      <>
+                        Cada mes se pagarían <strong>{pesos(planValido.filas[0]?.cuotaExigible ?? 0)}</strong> de
+                        intereses y el {fechaLarga(vencimiento)} se devolverían los {pesos(d.montoPrincipal)}.
+                      </>
+                    ) : (
+                      <>
+                        El {fechaLarga(vencimiento)} se devolverían{' '}
+                        <strong>{pesos(d.montoPrincipal + planValido.totalIntereses)}</strong>: los{' '}
+                        {pesos(d.montoPrincipal)} entregados más {pesos(planValido.totalIntereses)} de intereses.
+                      </>
+                    )}
+                    {d.modoCdt === 'CDT_INTERES_MENSUAL' && (
+                      <> En total, <strong>{pesos(planValido.totalIntereses)}</strong> de intereses.</>
+                    )}
+                  </Aviso>
+                ) : venta ? (
                   <Aviso tipo="info">
                     Pagaría <strong>{pesos(d.montoPrincipal)}</strong> en{' '}
                     <strong>{planValido.periodosHastaLiquidar ?? '—'} cuotas</strong>
@@ -583,7 +741,7 @@ export function NuevoPrestamo() {
                 )}
                 <details className="rounded-2xl bg-superficie-2">
                   <summary className="cursor-pointer px-4 py-3.5 font-semibold text-marca">
-                    Ver el desglose cuota por cuota
+                    {cdt ? 'Ver el desglose mes a mes' : 'Ver el desglose cuota por cuota'}
                   </summary>
                   <div className="p-3">
                     <TablaDesglose filas={planValido.filas.slice(0, 24)} />
@@ -631,7 +789,8 @@ export function NuevoPrestamo() {
             disabled={
               (paso === 1 && ((personal ? d.contraparteNombre.trim().length < 2 : !d.emailDeudor.includes('@')) || (venta && d.concepto.trim().length < 2))) ||
               (paso === 2 && d.montoPrincipal <= 0) ||
-              (paso === 3 && (Boolean(errorPlan) || (d.modoCalculo === 'CUOTA_FIJA' && !d.cuotaPactada)))
+              (paso === 3 && (Boolean(errorPlan) ||
+                (cdt ? !(d.numeroCuotas >= 1) : d.modoCalculo === 'CUOTA_FIJA' && !d.cuotaPactada)))
             }
           >
             Siguiente
@@ -645,7 +804,7 @@ export function NuevoPrestamo() {
               (pedirAceptacionUsura && !aceptaUsura)
             }
           >
-            {crear.isPending ? 'Registrando…' : venta ? 'Registrar venta' : 'Registrar préstamo'}
+            {crear.isPending ? 'Registrando…' : venta ? 'Registrar venta' : cdt ? 'Registrar CDT' : 'Registrar préstamo'}
           </button>
         )}
       </div>

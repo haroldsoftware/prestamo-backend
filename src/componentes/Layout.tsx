@@ -97,7 +97,7 @@ function BarraPestanas({ pendientes }: { pendientes: number }) {
         <NavLink
           to="/prestamos/nuevo"
           className="flex h-[var(--altura-tabbar)] w-[var(--altura-tabbar)] shrink-0 items-center justify-center rounded-full bg-marca-solido text-marca-sobre shadow-lg shadow-marca/30 transition active:scale-90"
-          aria-label="Registrar un préstamo o una venta"
+          aria-label="Registrar un préstamo, una venta o un CDT"
         >
           <IconoMas tam={28} strokeWidth={2.4} />
         </NavLink>

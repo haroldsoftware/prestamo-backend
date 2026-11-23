@@ -16,8 +16,8 @@ import {
 import { Pantalla } from '../componentes/Pantalla'
 import { TablaDesglose } from '../componentes/TablaDesglose'
 import { avance } from '../componentes/TarjetaPrestamo'
-import { esPersonal, esVenta, nombreRegistro, subtitulo } from '../lib/vocabulario'
-import { aNumero, fechaLarga, hoyISO, numero, pesos, porcentaje } from '../lib/formato'
+import { esCdtRegistro, esPersonal, esVenta, nombreRegistro, subtitulo } from '../lib/vocabulario'
+import { aNumero, fechaLarga, hoyISO, numero, pesos, porcentaje, sumarMeses } from '../lib/formato'
 
 type Pestana = 'resumen' | 'plan' | 'pagos' | 'gente' | 'historial'
 const PESTANAS: Pestana[] = ['resumen', 'plan', 'pagos', 'gente', 'historial']
@@ -72,6 +72,7 @@ export function DetallePrestamo() {
             </p>
             <div className="mt-1.5 flex gap-1.5">
               {esVenta(p) && <span className="insignia bg-[#8b5cf6]/12 text-[#7c3aed] dark:text-[#c4b5fd]">Venta a cuotas</span>}
+              {esCdtRegistro(p) && <span className="insignia bg-[#0ea5e9]/12 text-[#0369a1] dark:text-[#7dd3fc]">CDT</span>}
               {esPersonal(p) && <span className="insignia bg-superficie-2 text-texto-2">Personal</span>}
               <Insignia estado={p.estado} />
               {p.enMora && <Insignia estado="MORA" />}
@@ -142,7 +143,7 @@ export function DetallePrestamo() {
 
         <div key={pestana} className="animate-entrada">
           {pestana === 'resumen' && <Resumen prestamo={p} />}
-          {pestana === 'plan' && <Plan id={id} venta={esVenta(p)} />}
+          {pestana === 'plan' && <Plan id={id} venta={esVenta(p)} cdt={esCdtRegistro(p)} />}
           {pestana === 'pagos' && (
             <Pagos id={id} prestamo={p} miId={miId} alRegistrar={puedeRegistrar ? () => setRegistrando(true) : undefined} />
           )}
@@ -188,7 +189,11 @@ function HeroSaldo({ p }: { p: TDetalle }) {
       </p>
       <p className="cifra mt-1 text-[40px] font-bold leading-none tracking-tight">{pesos(p.saldo.capital)}</p>
       <p className="mt-1.5 text-[13px] text-white/75">
-        {esVenta(p) ? `de ${pesos(p.montoPrincipal)} en total · saldo por pagar` : `de ${pesos(p.montoPrincipal)} prestados · capital sin pagar`}
+        {esVenta(p)
+          ? `de ${pesos(p.montoPrincipal)} en total · saldo por pagar`
+          : esCdtRegistro(p)
+            ? `de ${pesos(p.montoPrincipal)} entregados · vence el ${fechaLarga(vencimientoCdt(p.condiciones))}`
+            : `de ${pesos(p.montoPrincipal)} prestados · capital sin pagar`}
       </p>
 
       <div className="mt-4">
@@ -218,6 +223,11 @@ function HeroSaldo({ p }: { p: TDetalle }) {
   )
 }
 
+/** Vencimiento de un CDT: tantos meses después de entregar la plata. */
+function vencimientoCdt(c: TDetalle['condiciones']): string {
+  return sumarMeses(c.fechaDesembolso, c.plazo ?? 0)
+}
+
 function MiniCifra({ etiqueta, valor, alerta }: { etiqueta: string; valor: number; alerta: boolean }) {
   return (
     <div className="vidrio-claro rounded-2xl px-3 py-2.5">
@@ -234,7 +244,22 @@ function Resumen({ prestamo: p }: { prestamo: TDetalle }) {
       <section>
         <h2 className="titulo-seccion">Las condiciones</h2>
         <dl className="grupo">
-          {esVenta(p) ? (
+          {esCdtRegistro(p) ? (
+            <>
+              <Fila k="Plata entregada" v={<span className="cifra">{pesos(c.montoPrincipal)}</span>} />
+              <Fila k="Entregada el" v={fechaLarga(c.fechaDesembolso)} />
+              <Fila
+                k="Interés"
+                v={`${porcentaje(c.tasaAnualPct ?? c.tasaCorrienteMensualPct * 12)} anual`}
+                extra={`Simple · ${c.modoCalculo === 'CDT_INTERES_MENSUAL' ? 'se paga cada mes' : 'se paga al vencimiento'}`}
+              />
+              <Fila
+                k="Mora"
+                v={c.modoMora === 'SIN_MORA' ? 'No se cobra' : `${c.tasaMoraMensualPct.toFixed(2)}% mensual`}
+                extra={c.modoMora === 'SIN_MORA' ? 'Se decidió no castigar el atraso' : 'Solo si no devuelve a tiempo, por días'}
+              />
+            </>
+          ) : esVenta(p) ? (
             <>
               <Fila k="Qué se vendió" v={p.concepto ?? '—'} />
               <Fila k="Valor total" v={<span className="cifra">{pesos(c.montoPrincipal)}</span>} />
@@ -253,8 +278,21 @@ function Resumen({ prestamo: p }: { prestamo: TDetalle }) {
               />
             </>
           )}
-          <Fila k="Cuota" v={c.cuota ? <span className="cifra">{pesos(c.cuota)}</span> : 'Libre'} />
-          <Fila k="Plazo" v={c.plazo ? `${c.plazo} cuotas` : 'Sin plazo fijo'} />
+          {esCdtRegistro(p) ? (
+            <>
+              <Fila
+                k={c.modoCalculo === 'CDT_INTERES_MENSUAL' ? 'Interés de cada mes' : 'Pago al vencimiento'}
+                v={<span className="cifra">{pesos(c.cuota)}</span>}
+                extra={c.modoCalculo === 'CDT_INTERES_MENSUAL' ? 'La plata se devuelve al vencimiento' : 'La plata más todos los intereses'}
+              />
+              <Fila k="Plazo" v={`${c.plazo} meses`} extra={`Vence el ${fechaLarga(vencimientoCdt(c))}`} />
+            </>
+          ) : (
+            <>
+              <Fila k="Cuota" v={c.cuota ? <span className="cifra">{pesos(c.cuota)}</span> : 'Libre'} />
+              <Fila k="Plazo" v={c.plazo ? `${c.plazo} cuotas` : 'Sin plazo fijo'} />
+            </>
+          )}
           <Fila
             k="Ventana de pago"
             v={`Día ${c.diaCorte ?? '—'}`}
@@ -342,11 +380,13 @@ function PanelUnirse({ prestamo: p }: { prestamo: TDetalle }) {
   const navegar = useNavigate()
   const [error, setError] = useState('')
   const quien = p.contraparte.nombre
-  const que = esVenta(p) ? `la venta a cuotas${p.concepto ? ` de ${p.concepto}` : ''}` : 'el préstamo'
+  const que = esVenta(p) ? `la venta a cuotas${p.concepto ? ` de ${p.concepto}` : ''}` : esCdtRegistro(p) ? 'el CDT' : 'el préstamo'
   // Texto EXACTO que queda como constancia.
   const TEXTO =
     `Acepto que ${que} con ${quien} tiene hoy un saldo de ${pesos(p.saldo.capital)}, sobre un total de ` +
-    `${pesos(p.montoPrincipal)}${p.condiciones.cuota ? ` con cuotas de ${pesos(p.condiciones.cuota)}` : ''}. ` +
+    `${pesos(p.montoPrincipal)}${esCdtRegistro(p)
+      ? ` que vence el ${fechaLarga(vencimientoCdt(p.condiciones))}`
+      : p.condiciones.cuota ? ` con cuotas de ${pesos(p.condiciones.cuota)}` : ''}. ` +
     `Sé que los pagos registrados hasta hoy los registró ${quien} sin mi confirmación, y que desde ahora ` +
     `cada pago nuevo lo confirmará la otra parte.`
   return (
@@ -413,7 +453,7 @@ function HojaExportar({ abierta, alCerrar, id }: { abierta: boolean; alCerrar():
   )
 }
 
-function Plan({ id, venta }: { id: string; venta: boolean }) {
+function Plan({ id, venta, cdt = false }: { id: string; venta: boolean; cdt?: boolean }) {
   const { data, isLoading, error } = usePlan(id)
   if (isLoading) return <div className="space-y-3">{[0, 1, 2].map((i) => <Esqueleto key={i} className="h-32 rounded-3xl" />)}</div>
   if (error) return <Aviso tipo="info">No tienes permiso para ver los montos.</Aviso>
@@ -429,7 +469,10 @@ function Plan({ id, venta }: { id: string; venta: boolean }) {
         <div className="grid grid-cols-3 gap-2.5">
           <Dato etiqueta="Intereses" valor={pesos(data.totalIntereses)} cifra />
           <Dato etiqueta="Mora" valor={data.totalMora > 0 ? pesos(data.totalMora) : 'Ninguna'} cifra={data.totalMora > 0} />
-          <Dato etiqueta="Termina en" valor={data.periodosHastaLiquidar ? `${data.periodosHastaLiquidar} cuotas` : '—'} />
+          <Dato
+            etiqueta={cdt ? 'Vence' : 'Termina en'}
+            valor={cdt ? fechaLarga(data.fechaLiquidacion ?? undefined) : data.periodosHastaLiquidar ? `${data.periodosHastaLiquidar} cuotas` : '—'}
+          />
         </div>
       )}
       <TablaDesglose filas={data.filas} />
@@ -452,6 +495,7 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
   const negociar = useNegociar(p.id)
   const toast = useToast()
   const [cuota, setCuota] = useState(0)
+  const [mensajeProp, setMensajeProp] = useState('')
   const [error, setError] = useState('')
   const [aceptaUsura, setAceptaUsura] = useState(false)
   const [proponiendo, setProponiendo] = useState(false)
@@ -459,7 +503,16 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
 
   // Este es el texto EXACTO que queda como constancia: en una venta debe decir
   // que se paga un bien o servicio, no que se recibe un préstamo.
-  const TEXTO = esVenta(p)
+  const c = p.condiciones
+  const TEXTO = esCdtRegistro(p)
+    ? `Acepto las condiciones de este CDT: ${pesos(c.montoPrincipal)} entregados el ${fechaLarga(c.fechaDesembolso)}, ` +
+      `a ${c.plazo} meses, con un interés simple del ${porcentaje(c.tasaAnualPct ?? 0)} anual. ` +
+      (c.modoCalculo === 'CDT_INTERES_MENSUAL'
+        ? `Se pagan ${pesos(c.cuota)} de intereses cada mes y los ${pesos(c.montoPrincipal)} el ${fechaLarga(vencimientoCdt(c))}. `
+        : `El ${fechaLarga(vencimientoCdt(c))} se devuelven ${pesos(c.cuota)}, la plata más los intereses. `) +
+      `Si se devuelve antes, solo se pagan los intereses de los días transcurridos. ` +
+      `Entiendo que esta plataforma solo lleva el registro y no interviene en el acuerdo.`
+    : esVenta(p)
     ? `Acepto pagar ${pesos(p.condiciones.montoPrincipal)} por ${p.concepto ?? 'lo acordado'}` +
       (p.condiciones.plazo ? ` en ${p.condiciones.plazo} cuotas de ${pesos(p.condiciones.cuota)}` : '') +
       `, sin interés. Entiendo que esta plataforma solo lleva el registro y no interviene en el acuerdo.`
@@ -486,7 +539,7 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
       <div className="flex items-center gap-3">
         <IconoEnCaja color="#2f9488"><IconoCheck tam={22} /></IconoEnCaja>
         <h2 className="text-[17px] font-bold">
-          {yaAcepte ? 'Ya aceptaste: falta la otra parte' : `${esVenta(p) ? 'Esta venta' : 'Este préstamo'} espera tu decisión`}
+          {yaAcepte ? 'Ya aceptaste: falta la otra parte' : `${esVenta(p) ? 'Esta venta' : esCdtRegistro(p) ? 'Este CDT' : 'Este préstamo'} espera tu decisión`}
         </h2>
       </div>
       <p className="mt-2 text-[14px] text-texto-2">
@@ -496,10 +549,19 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <div className="col-span-2"><Dato etiqueta={esVenta(p) ? 'Valor total' : 'Monto'} valor={pesos(p.condiciones.montoPrincipal)} cifra /></div>
-        {esVenta(p)
-          ? <Dato etiqueta="Cuotas" valor={p.condiciones.plazo ? String(p.condiciones.plazo) : 'Libre'} />
-          : <Dato etiqueta="Interés" valor={`${p.condiciones.tasaCorrienteMensualPct}% mes`} />}
-        <Dato etiqueta="Cuota" valor={p.condiciones.cuota ? pesos(p.condiciones.cuota) : 'Libre'} cifra={Boolean(p.condiciones.cuota)} />
+        {esCdtRegistro(p) ? (
+          <>
+            <Dato etiqueta="Interés" valor={`${porcentaje(c.tasaAnualPct ?? 0)} año · ${c.plazo} meses`} />
+            <Dato etiqueta={c.modoCalculo === 'CDT_INTERES_MENSUAL' ? 'Cada mes' : 'Al vencimiento'} valor={pesos(c.cuota)} cifra />
+          </>
+        ) : (
+          <>
+            {esVenta(p)
+              ? <Dato etiqueta="Cuotas" valor={p.condiciones.plazo ? String(p.condiciones.plazo) : 'Libre'} />
+              : <Dato etiqueta="Interés" valor={`${p.condiciones.tasaCorrienteMensualPct}% mes`} />}
+            <Dato etiqueta="Cuota" valor={p.condiciones.cuota ? pesos(p.condiciones.cuota) : 'Libre'} cifra={Boolean(p.condiciones.cuota)} />
+          </>
+        )}
       </div>
 
       {error && <div className="mt-3"><Aviso tipo="error">{error}</Aviso></div>}
@@ -552,7 +614,9 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
               {aceptar.isPending ? 'Aceptando…' : 'Acepto estas condiciones'}
             </button>
             <div className="grid grid-cols-2 gap-2.5">
-              <button className="btn-tonal" onClick={() => setProponiendo(true)}>Proponer cuota</button>
+              <button className="btn-tonal" onClick={() => setProponiendo(true)}>
+                {esCdtRegistro(p) ? 'Proponer cambios' : 'Proponer cuota'}
+              </button>
               <button
                 className="btn-peligro"
                 disabled={rechazar.isPending}
@@ -565,7 +629,33 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
         </>
       )}
 
-      <Hoja abierta={proponiendo} alCerrar={() => setProponiendo(false)} titulo="Proponer otra cuota">
+      <Hoja
+        abierta={proponiendo} alCerrar={() => setProponiendo(false)}
+        titulo={esCdtRegistro(p) ? 'Proponer otras condiciones' : 'Proponer otra cuota'}
+      >
+        {esCdtRegistro(p) ? (
+        <div className="space-y-4">
+          <div>
+            <label className="etiqueta" htmlFor="mensajeProp">¿Qué te gustaría cambiar?</label>
+            <textarea
+              id="mensajeProp" className="campo min-h-28" maxLength={500} value={mensajeProp}
+              onChange={(e) => setMensajeProp(e.target.value)} placeholder="Prefiero a 6 meses y al 10 %"
+            />
+            <p className="ayuda">La otra parte lo lee y, si está de acuerdo, registra el CDT con los cambios.</p>
+          </div>
+          <button
+            className="btn-primario w-full"
+            disabled={mensajeProp.trim().length < 3 || negociar.isPending}
+            onClick={() =>
+              void negociar.mutateAsync({ mensaje: mensajeProp.trim() })
+                .then(() => { setProponiendo(false); toast({ tipo: 'exito', texto: 'Propuesta enviada' }) })
+                .catch((e) => setError(mensaje(e, 'No pudimos enviar la propuesta')))
+            }
+          >
+            Enviar propuesta
+          </button>
+        </div>
+        ) : (
         <div className="space-y-4">
           <div>
             <label className="etiqueta" htmlFor="cuotaProp">¿Cuánto puedes pagar al mes?</label>
@@ -588,6 +678,7 @@ function PanelAceptacion({ prestamo: p, miId }: { prestamo: TDetalle; miId: stri
             Enviar propuesta
           </button>
         </div>
+        )}
       </Hoja>
     </div>
   )

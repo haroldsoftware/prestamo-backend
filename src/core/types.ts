@@ -2,7 +2,15 @@ import type { FechaISO } from './holidays.js'
 import type { Pesos, Tasa } from './money.js'
 import type { Periodicidad } from './rates.js'
 
-export type ModoCalculo = 'CUOTA_FIJA' | 'PLAZO_FIJO' | 'LIBRE'
+/**
+ * CDT_*: una persona entrega plata a otra por un plazo en meses y la recibe de
+ * vuelta con un interés simple anual pactado. `numeroCuotas` es el plazo en
+ * meses. AL_VENCIMIENTO: capital + intereses en un solo pago al final.
+ * INTERES_MENSUAL: los intereses cada mes y el capital al final.
+ */
+export type ModoCalculo =
+  | 'CUOTA_FIJA' | 'PLAZO_FIJO' | 'LIBRE'
+  | 'CDT_AL_VENCIMIENTO' | 'CDT_INTERES_MENSUAL'
 export type ModoMora = 'SIN_MORA' | 'PERSONALIZADA' | 'MAXIMO_LEGAL'
 export type EfectoAbono = 'REDUCIR_PLAZO' | 'REDUCIR_CUOTA'
 
@@ -24,6 +32,12 @@ export interface Condiciones {
   correrADiaHabil: boolean
   cuotaPactada?: Pesos
   numeroCuotas?: number
+  /**
+   * Solo CDT: tasa ANUAL de interés simple. Se guarda aparte porque dividirla
+   * entre 12 pierde precisión (10 % / 12 no es exacto) y el total del plazo
+   * debe dar al peso lo que se pactó.
+   */
+  tasaAnual?: Tasa
 }
 
 /**

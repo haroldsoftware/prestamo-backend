@@ -19,7 +19,7 @@ export type Pesos = number
  * contra dinero.
  */
 export const ESCALA_TASA = 10_000_000_000
-const ESCALA_TASA_BIG = BigInt(ESCALA_TASA)
+export const ESCALA_TASA_BIG = BigInt(ESCALA_TASA)
 
 /** Tasa periódica expresada en partes por 10^10. */
 export type Tasa = number

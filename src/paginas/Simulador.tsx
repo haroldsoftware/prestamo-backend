@@ -38,7 +38,8 @@ export function Simulador() {
       diasGracia: c.diasGracia,
       correrADiaHabil: c.correrADiaHabil,
       cuotaPactada: c.modoCalculo === 'CUOTA_FIJA' ? c.cuota : undefined,
-      numeroCuotas: c.modoCalculo === 'PLAZO_FIJO' ? (c.plazo ?? undefined) : undefined,
+      numeroCuotas: c.modoCalculo === 'CUOTA_FIJA' || c.modoCalculo === 'LIBRE' ? undefined : (c.plazo ?? undefined),
+      tasaAnual: c.tasaAnualPct !== undefined ? tasaDesdePorcentaje(c.tasaAnualPct) : undefined,
     }
   }, [p])
 

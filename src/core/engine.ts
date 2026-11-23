@@ -9,7 +9,9 @@
 
 import { generarPeriodos, type ConfigPeriodos, type Periodo } from './dates.js'
 import { diasEntre, type FechaISO } from './holidays.js'
-import { aplicarTasa, aplicarTasaProrrateada, repartir, type Pesos } from './money.js'
+import {
+  aplicarTasa, aplicarTasaProrrateada, divRedondeado, ESCALA_TASA_BIG, repartir, type Pesos, type Tasa,
+} from './money.js'
 import { periodosPorAnio } from './rates.js'
 import { cuotaParaPlazo, plazoParaCuota } from './schedule.js'
 import type { Asiento, Condiciones, Estado, FilaDesglose, Pago } from './types.js'
@@ -36,9 +38,63 @@ export function configPeriodos(c: Condiciones): ConfigPeriodos {
   }
 }
 
+/** ¿Es un CDT (plata entregada a término con interés simple anual)? */
+export function esCdt(c: Pick<Condiciones, 'modoCalculo'>): boolean {
+  return c.modoCalculo === 'CDT_AL_VENCIMIENTO' || c.modoCalculo === 'CDT_INTERES_MENSUAL'
+}
+
+function tasaAnualCdt(c: Condiciones): Tasa {
+  return c.tasaAnual ?? c.tasaCorriente * 12
+}
+
+/** Interés simple acumulado de `meses` meses: capital × tasaAnual × meses / 12. */
+function interesAcumuladoCdt(capital: Pesos, tasaAnual: Tasa, meses: number): Pesos {
+  if (meses <= 0) return 0
+  return Number(divRedondeado(BigInt(capital) * BigInt(tasaAnual) * BigInt(meses), ESCALA_TASA_BIG * 12n))
+}
+
+/**
+ * Interés del mes `numero` de un CDT.
+ *
+ * Se calcula como diferencia de acumulados para que el redondeo no se
+ * acumule: 10 millones al 10 % anual dan $1.000.000 exactos en 12 meses, no
+ * 12 × $83.333 = $999.996.
+ */
+export function interesMesCdt(capital: Pesos, tasaAnual: Tasa, numero: number): Pesos {
+  if (capital <= 0) return 0
+  return interesAcumuladoCdt(capital, tasaAnual, numero) - interesAcumuladoCdt(capital, tasaAnual, numero - 1)
+}
+
+/** Interés corriente que causa un período sobre el capital dado. */
+export function interesCorrienteDelPeriodo(c: Condiciones, capital: Pesos, numero: number): Pesos {
+  if (capital <= 0) return 0
+  return esCdt(c) ? interesMesCdt(capital, tasaAnualCdt(c), numero) : aplicarTasa(capital, c.tasaCorriente)
+}
+
+/**
+ * Lo que se vuelve exigible en un período de un CDT.
+ *
+ * Antes del vencimiento: nada (AL_VENCIMIENTO) o el interés del mes
+ * (INTERES_MENSUAL). Desde el vencimiento: todo lo que se debe y aún no
+ * estaba vencido — capital más intereses.
+ */
+export function exigibleCdt(c: Condiciones, numero: number, previo: Estado, interesDelPeriodo: Pesos): Pesos {
+  const plazo = c.numeroCuotas ?? 1
+  if (numero < plazo) return c.modoCalculo === 'CDT_INTERES_MENSUAL' ? interesDelPeriodo : 0
+  return Math.max(0, previo.capital + previo.interesesPendientes + interesDelPeriodo - previo.vencido)
+}
+
 /** Cuota exigible por período según el modo de cálculo. */
 export function cuotaExigible(c: Condiciones): Pesos {
   switch (c.modoCalculo) {
+    case 'CDT_AL_VENCIMIENTO':
+      // El único pago: capital + todos los intereses del plazo.
+      if (c.numeroCuotas === undefined) throw new RangeError('un CDT requiere numeroCuotas (meses)')
+      return c.montoPrincipal + interesAcumuladoCdt(c.montoPrincipal, tasaAnualCdt(c), c.numeroCuotas)
+    case 'CDT_INTERES_MENSUAL':
+      // Lo que se paga cada mes antes del vencimiento.
+      if (c.numeroCuotas === undefined) throw new RangeError('un CDT requiere numeroCuotas (meses)')
+      return interesMesCdt(c.montoPrincipal, tasaAnualCdt(c), 1)
     case 'CUOTA_FIJA':
       if (c.cuotaPactada === undefined) throw new RangeError('CUOTA_FIJA requiere cuotaPactada')
       return c.cuotaPactada
@@ -53,7 +109,7 @@ export function cuotaExigible(c: Condiciones): Pesos {
 
 /** Número de períodos que se proyectan por defecto. */
 export function plazoEstimado(c: Condiciones): number {
-  if (c.modoCalculo === 'PLAZO_FIJO') return c.numeroCuotas ?? 0
+  if (c.modoCalculo === 'PLAZO_FIJO' || esCdt(c)) return c.numeroCuotas ?? 0
   if (c.modoCalculo === 'LIBRE') return Math.ceil(periodosPorAnio(c.periodicidad, c.diasPersonalizados))
   return plazoParaCuota(c.montoPrincipal, c.tasaCorriente, cuotaExigible(c))
 }
@@ -96,8 +152,36 @@ export function procesarPeriodo(
 
   const snapshot = (): Estado => ({ capital, interesesPendientes, moraPendiente, vencido })
 
+  const totalPagado = pagos.reduce((a, p) => a + p.monto, 0)
+
   // ── 1. Interés corriente. Base = SOLO capital. Sin anatocismo.
-  const interesDelPeriodo = capital > 0 ? aplicarTasa(capital, condiciones.tasaCorriente) : 0
+  let interesDelPeriodo = interesCorrienteDelPeriodo(condiciones, capital, periodo.numero)
+  let diasInteres = periodo.dias
+
+  // ── 2a. Mora sobre lo vencido, prorrateada por los días que realmente estuvo
+  //        en mora dentro de ESTE período. En modo LIBRE no hay cronograma,
+  //        luego no hay vencido, luego no hay mora.
+  const diasBase = Math.max(1, periodo.dias)
+  const diasAtraso = diasEnMoraDelPeriodo(periodo, opciones.periodoAnterior, condiciones)
+  const moraDelPeriodo =
+    vencido > 0 && condiciones.tasaMora > 0 && diasAtraso > 0
+      ? aplicarTasaProrrateada(vencido, condiciones.tasaMora, diasAtraso, diasBase)
+      : 0
+
+  // CDT devuelto antes del corte: si el pago alcanza para liquidar todo, el
+  // interés de este mes se cobra solo por los días que tuvo la plata.
+  if (esCdt(condiciones) && interesDelPeriodo > 0 && pagos.length > 0) {
+    const fechaPago = pagos.reduce((f, p) => (p.fecha > f ? p.fecha : f), pagos[0]!.fecha)
+    if (fechaPago < periodo.corte && periodo.dias > 0) {
+      const dias = Math.max(0, Math.min(diasEntre(periodo.inicio, fechaPago), periodo.dias))
+      const parcial = Number(divRedondeado(BigInt(interesDelPeriodo) * BigInt(dias), BigInt(periodo.dias)))
+      if (totalPagado >= capital + interesesPendientes + moraPendiente + moraDelPeriodo + parcial) {
+        interesDelPeriodo = parcial
+        diasInteres = dias
+      }
+    }
+  }
+
   if (interesDelPeriodo > 0) {
     const antes = snapshot()
     interesesPendientes += interesDelPeriodo
@@ -109,24 +193,18 @@ export function procesarPeriodo(
       contexto: {
         tasaAplicada: condiciones.tasaCorriente,
         baseCalculo: capital,
-        diasCalculo: periodo.dias,
+        diasCalculo: diasInteres,
         diasDelPeriodo: periodo.dias,
-        formula: 'capital × tasaCorriente',
+        formula: esCdt(condiciones)
+          ? (diasInteres < periodo.dias ? 'capital × tasaAnual / 12 × días/díasPeríodo' : 'capital × tasaAnual / 12')
+          : 'capital × tasaCorriente',
         saldoAntes: antes,
         saldoDespues: snapshot(),
       },
     })
   }
 
-  // ── 2. Mora sobre lo vencido, prorrateada por los días que realmente estuvo
-  //       en mora dentro de ESTE período. En modo LIBRE no hay cronograma,
-  //       luego no hay vencido, luego no hay mora.
-  const diasBase = Math.max(1, periodo.dias)
-  const diasAtraso = diasEnMoraDelPeriodo(periodo, opciones.periodoAnterior, condiciones)
-  const moraDelPeriodo =
-    vencido > 0 && condiciones.tasaMora > 0 && diasAtraso > 0
-      ? aplicarTasaProrrateada(vencido, condiciones.tasaMora, diasAtraso, diasBase)
-      : 0
+  // ── 2b. Asiento de la mora.
   if (moraDelPeriodo > 0) {
     const antes = snapshot()
     moraPendiente += moraDelPeriodo
@@ -148,7 +226,6 @@ export function procesarPeriodo(
   }
 
   // ── 3. Aplicar pagos con prelación legal.
-  const totalPagado = pagos.reduce((a, p) => a + p.monto, 0)
   const { asignado, remanente } = repartir(totalPagado, [moraPendiente, interesesPendientes])
   const aMora = asignado[0] ?? 0
   const aIntereses = asignado[1] ?? 0
@@ -175,7 +252,10 @@ export function procesarPeriodo(
   }
 
   // ── 4. Actualizar lo vencido.
-  const exigible = opciones.cuotaDelPeriodo ?? cuotaExigible(condiciones)
+  const exigible = opciones.cuotaDelPeriodo ??
+    (esCdt(condiciones)
+      ? exigibleCdt(condiciones, periodo.numero, estadoPrevio, interesDelPeriodo)
+      : cuotaExigible(condiciones))
   vencido = Math.max(0, vencido + exigible - totalPagado)
 
   const estado: Estado = { capital, interesesPendientes, moraPendiente, vencido }
@@ -285,6 +365,7 @@ const TOPE_DURO_PERIODOS = 1200
 export function proyectar(condiciones: Condiciones, opciones: OpcionesProyeccion = {}): Proyeccion {
   const estadoDeArranque = opciones.desde ?? estadoInicial(condiciones)
   const primerPeriodo = opciones.primerPeriodo ?? 1
+  const cdt = esCdt(condiciones)
   const cuotaBase = cuotaExigible(condiciones)
 
   const maxPeriodos = Math.min(
@@ -311,21 +392,20 @@ export function proyectar(condiciones: Condiciones, opciones: OpcionesProyeccion
   for (const periodo of periodos) {
     if (estado.capital === 0 && estado.interesesPendientes === 0 && estado.moraPendiente === 0) break
 
-    const cuota = opciones.cuotaPorPeriodo?.[periodo.numero] ?? cuotaBase
+    const interes = interesCorrienteDelPeriodo(condiciones, estado.capital, periodo.numero)
+    const cuotaEditada = opciones.cuotaPorPeriodo?.[periodo.numero]
+    // En un CDT lo exigible cambia mes a mes (nada, o el interés, hasta el vencimiento).
+    const cuota = cuotaEditada ?? (cdt ? exigibleCdt(condiciones, periodo.numero, estado, interes) : cuotaBase)
     const pagoDefinido = opciones.pagosPorPeriodo?.[periodo.numero]
 
     // Sin instrucción explícita se asume el pago del período: la cuota, o lo que
     // falte para liquidar si es menos. Así la proyección "normal" termina.
-    const porLiquidar =
-      estado.capital +
-      estado.interesesPendientes +
-      estado.moraPendiente +
-      (estado.capital > 0 ? aplicarTasa(estado.capital, condiciones.tasaCorriente) : 0)
+    const porLiquidar = estado.capital + estado.interesesPendientes + estado.moraPendiente + interes
     const monto = pagoDefinido ?? Math.min(cuota, porLiquidar)
 
     const pagos: Pago[] = monto > 0 ? [{ fecha: periodo.corte, monto }] : []
     const resultado = procesarPeriodo(estado, periodo, condiciones, pagos, {
-      cuotaDelPeriodo: cuota,
+      cuotaDelPeriodo: cdt && cuotaEditada === undefined ? undefined : cuota,
       periodoAnterior,
     })
     periodoAnterior = periodo

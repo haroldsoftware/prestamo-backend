@@ -41,7 +41,7 @@ export function TarjetaPrestamo({ p }: { p: ResumenPrestamo }) {
       {activo && (
         <div className="mt-3.5">
           <div className="mb-1.5 flex justify-between text-[12px] text-texto-2">
-            <span>{p.cuota > 0 ? `Cuota de ${pesos(p.cuota)}` : 'Pago libre'}</span>
+            <span>{p.tipo === 'CDT' ? `CDT a ${p.plazo ?? '—'} meses` : p.cuota > 0 ? `Cuota de ${pesos(p.cuota)}` : 'Pago libre'}</span>
             <span className="font-semibold">{Math.round(v * 100)}% pagado</span>
           </div>
           <Progreso valor={v} />
