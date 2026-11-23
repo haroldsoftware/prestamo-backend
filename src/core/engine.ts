@@ -137,6 +137,13 @@ export interface OpcionesPeriodo {
    * del período anterior, no desde que empieza este.
    */
   periodoAnterior?: Periodo
+  /**
+   * El período YA se causó en el libro (por un pago anterior del mismo período
+   * o por el job de causación). Entonces este pago NO vuelve a causar interés
+   * ni mora ni a sumar lo exigible: solo se aplica. `interes` es lo que ya se
+   * causó de interés corriente en el período (la suma de sus asientos).
+   */
+  causadoPreviamente?: { interes: Pesos }
 }
 
 export function procesarPeriodo(
@@ -154,9 +161,14 @@ export function procesarPeriodo(
 
   const totalPagado = pagos.reduce((a, p) => a + p.monto, 0)
 
+  const previo = opciones.causadoPreviamente
+
   // ── 1. Interés corriente. Base = SOLO capital. Sin anatocismo.
-  let interesDelPeriodo = interesCorrienteDelPeriodo(condiciones, capital, periodo.numero)
+  //       Si el período ya se causó, no se causa otra vez.
+  let interesDelPeriodo = previo ? 0 : interesCorrienteDelPeriodo(condiciones, capital, periodo.numero)
   let diasInteres = periodo.dias
+  // Crédito por interés ya causado de días que no se usaron (CDT devuelto antes).
+  let creditoInteres = 0
 
   // ── 2a. Mora sobre lo vencido, prorrateada por los días que realmente estuvo
   //        en mora dentro de ESTE período. En modo LIBRE no hay cronograma,
@@ -164,22 +176,64 @@ export function procesarPeriodo(
   const diasBase = Math.max(1, periodo.dias)
   const diasAtraso = diasEnMoraDelPeriodo(periodo, opciones.periodoAnterior, condiciones)
   const moraDelPeriodo =
-    vencido > 0 && condiciones.tasaMora > 0 && diasAtraso > 0
+    !previo && vencido > 0 && condiciones.tasaMora > 0 && diasAtraso > 0
       ? aplicarTasaProrrateada(vencido, condiciones.tasaMora, diasAtraso, diasBase)
       : 0
 
   // CDT devuelto antes del corte: si el pago alcanza para liquidar todo, el
-  // interés de este mes se cobra solo por los días que tuvo la plata.
-  if (esCdt(condiciones) && interesDelPeriodo > 0 && pagos.length > 0) {
+  // interés de este mes se cobra solo por los días que tuvo la plata. Si el mes
+  // ya se había causado completo (un abono anterior en el mismo mes), lo
+  // causado de más se devuelve como crédito.
+  const interesDelMes = previo ? previo.interes : interesDelPeriodo
+  if (esCdt(condiciones) && interesDelMes > 0 && pagos.length > 0) {
     const fechaPago = pagos.reduce((f, p) => (p.fecha > f ? p.fecha : f), pagos[0]!.fecha)
     if (fechaPago < periodo.corte && periodo.dias > 0) {
       const dias = Math.max(0, Math.min(diasEntre(periodo.inicio, fechaPago), periodo.dias))
-      const parcial = Number(divRedondeado(BigInt(interesDelPeriodo) * BigInt(dias), BigInt(periodo.dias)))
-      if (totalPagado >= capital + interesesPendientes + moraPendiente + moraDelPeriodo + parcial) {
-        interesDelPeriodo = parcial
+      const parcial = Number(divRedondeado(BigInt(interesDelMes) * BigInt(dias), BigInt(periodo.dias)))
+      const totalDeuda = previo
+        ? capital + interesesPendientes + moraPendiente - (interesDelMes - parcial)
+        : capital + interesesPendientes + moraPendiente + moraDelPeriodo + parcial
+      if (totalPagado >= totalDeuda) {
         diasInteres = dias
+        if (previo) creditoInteres = interesDelMes - parcial
+        else interesDelPeriodo = parcial
       }
     }
+  }
+
+  if (creditoInteres > 0) {
+    // Primero se descuenta de los intereses pendientes; si ya se habían pagado,
+    // lo que sobra baja el capital.
+    const contraIntereses = Math.min(creditoInteres, interesesPendientes)
+    if (contraIntereses > 0) {
+      const antes = snapshot()
+      interesesPendientes -= contraIntereses
+      asientos.push({
+        tipo: 'CAUSACION_INTERES',
+        fechaEfecto: periodo.corte,
+        monto: -contraIntereses,
+        periodoNumero: periodo.numero,
+        contexto: {
+          tasaAplicada: condiciones.tasaCorriente,
+          baseCalculo: capital,
+          diasCalculo: diasInteres,
+          diasDelPeriodo: periodo.dias,
+          formula: 'ajuste: devolución anticipada, interés solo por los días usados',
+          saldoAntes: antes,
+          saldoDespues: snapshot(),
+        },
+      })
+    }
+    const aCapitalPorCredito = Math.min(creditoInteres - contraIntereses, capital)
+    if (aCapitalPorCredito > 0) {
+      const antes = snapshot()
+      capital -= aCapitalPorCredito
+      asientos.push(asientoPago(
+        'ABONO_CAPITAL', periodo, aCapitalPorCredito, antes, snapshot(),
+        'crédito: interés ya pagado por días que no se usaron',
+      ))
+    }
+    interesDelPeriodo = -creditoInteres
   }
 
   if (interesDelPeriodo > 0) {
@@ -251,11 +305,14 @@ export function procesarPeriodo(
     )
   }
 
-  // ── 4. Actualizar lo vencido.
-  const exigible = opciones.cuotaDelPeriodo ??
-    (esCdt(condiciones)
-      ? exigibleCdt(condiciones, periodo.numero, estadoPrevio, interesDelPeriodo)
-      : cuotaExigible(condiciones))
+  // ── 4. Actualizar lo vencido. Si el período ya se causó, su exigible ya se
+  //       había sumado: este pago solo lo reduce.
+  const exigible = previo
+    ? 0
+    : opciones.cuotaDelPeriodo ??
+      (esCdt(condiciones)
+        ? exigibleCdt(condiciones, periodo.numero, estadoPrevio, interesDelPeriodo)
+        : cuotaExigible(condiciones))
   vencido = Math.max(0, vencido + exigible - totalPagado)
 
   const estado: Estado = { capital, interesesPendientes, moraPendiente, vencido }

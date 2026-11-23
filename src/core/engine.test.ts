@@ -320,3 +320,44 @@ describe('CDT — plata a término con interés simple anual', () => {
     expect(reconstruido.interesesPendientes).toBe(0)
   })
 })
+
+describe('dos pagos en el mismo período', () => {
+  const periodos = generarPeriodos(ORO.fechaDesembolso, configPeriodos(ORO), 2)
+
+  it('el segundo pago no vuelve a causar interés ni a sumar la cuota', () => {
+    const primero = procesarPeriodo(estadoInicial(ORO), periodos[0]!, ORO, [{ fecha: '2026-01-10', monto: 500_000 }])
+    const segundo = procesarPeriodo(primero.estado, periodos[0]!, ORO, [{ fecha: '2026-01-20', monto: 500_000 }], {
+      causadoPreviamente: { interes: primero.fila.interesDelPeriodo },
+    })
+    const unSolo = procesarPeriodo(estadoInicial(ORO), periodos[0]!, ORO, [{ fecha: '2026-01-20', monto: 1_000_000 }])
+    expect(segundo.estado).toEqual(unSolo.estado)
+    expect(segundo.asientos.some((a) => a.tipo === 'CAUSACION_INTERES' || a.tipo === 'CAUSACION_MORA')).toBe(false)
+  })
+
+  it('CDT: abono y devolución en el mismo mes cobran solo los días usados', () => {
+    const CDT: Condiciones = {
+      ...ORO, fechaDesembolso: '2026-01-15', diaCorte: 15, modoMora: 'SIN_MORA', tasaMora: 0,
+      modoCalculo: 'CDT_AL_VENCIMIENTO', cuotaPactada: undefined, numeroCuotas: 12,
+      tasaCorriente: tasaDesdePorcentaje(1), tasaAnual: tasaDesdePorcentaje(12),
+    }
+    const [mes1] = generarPeriodos(CDT.fechaDesembolso, configPeriodos(CDT), 1)
+    expect(mes1!.dias).toBe(31)
+    // Abono de 1 millón a los 5 días: causa el mes completo ($100.000) y paga
+    // esos intereses y $900.000 de capital.
+    const abono = procesarPeriodo(estadoInicial(CDT), mes1!, CDT, [{ fecha: '2026-01-20', monto: 1_000_000 }])
+    expect(abono.estado.capital).toBe(9_100_000)
+    // Devuelve todo a los 10 días (10 de 31): el interés justo es $32.258.
+    const justo = Math.round((100_000 * 10) / 31)
+    const credito = 100_000 - justo
+    const r = procesarPeriodo(abono.estado, mes1!, CDT, [{ fecha: '2026-01-25', monto: 9_100_000 - credito }], {
+      causadoPreviamente: { interes: abono.fila.interesDelPeriodo },
+    })
+    expect(r.estado).toEqual({ capital: 0, interesesPendientes: 0, moraPendiente: 0, vencido: 0 })
+    const reconstruido = reconstruirEstado([
+      { tipo: 'DESEMBOLSO', fechaEfecto: CDT.fechaDesembolso, monto: CDT.montoPrincipal, periodoNumero: 0,
+        contexto: abono.asientos[0]!.contexto },
+      ...abono.asientos, ...r.asientos,
+    ])
+    expect(reconstruido).toEqual({ capital: 0, interesesPendientes: 0, moraPendiente: 0, vencido: 0 })
+  })
+})
